@@ -1,0 +1,63 @@
+enum tradeTypeEnum {
+  offer
+  bid
+}
+
+enum approvalStatusEnum {
+  pending
+  approved
+  cancelled
+}
+
+type trade implements Node {
+  _id: ID!
+  property: CatalogItemProduct
+  seller: Account
+  buyer: Account
+  tradeBy: String
+  tradeFor: String
+  productId: String
+  price: Float
+  area: Float
+  expirationTime: String
+  tradeType: tradeTypeEnum
+  decorum: String
+  minQty: Float
+  currencyUnit: String
+  cancellationReason: String
+  endDate: Date
+}
+
+input tradeInput {
+  tradeBy: String
+  tradeFor: String
+  productId: String
+  price: Float
+  area: Float
+  expirationTime: String
+  tradeType: tradeTypeEnum
+  approvalStatus: approvalStatusEnum
+  decorum: String
+  minQty: Float
+  currencyUnit: String
+  cancellationReason: String
+  endDate: Date
+}
+
+input tradeFiltersInput {
+  byUser: String
+  byProperty: String
+}
+
+type tradeOutput {
+  _id: String
+}
+
+extend type Mutation {
+  createTradeForProperty(input: tradeInput!): tradeOutput
+}
+
+extend type Query {
+  getTrades(input: tradeFiltersInput): [trade]
+  getTradesForProperty(productId: String!): [trade]
+}
