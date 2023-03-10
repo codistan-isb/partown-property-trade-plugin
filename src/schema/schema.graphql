@@ -12,25 +12,24 @@ enum approvalStatusEnum {
 type trade implements Node {
   _id: ID!
   property: CatalogItemProduct
-  seller: Account
-  buyer: Account
-  tradeBy: String
-  tradeFor: String
+  buyerId: String
+  sellerId: String
   productId: String
   price: Float
   area: Float
   expirationTime: String
-  tradeType: tradeTypeEnum
+  tradeType: tradeTypeEnum!
   decorum: String
   minQty: Float
   currencyUnit: String
   cancellationReason: String
   endDate: Date
+  createdBy: String
 }
 
 input tradeInput {
-  tradeBy: String
-  tradeFor: String
+  buyerId: String
+  sellerId: String!
   productId: String
   price: Float
   area: Float
@@ -42,6 +41,7 @@ input tradeInput {
   currencyUnit: String
   cancellationReason: String
   endDate: Date
+  createdBy: String
 }
 
 input tradeFiltersInput {
@@ -53,11 +53,57 @@ type tradeOutput {
   _id: String
 }
 
+type UnitOwnership implements Node {
+  _id: ID!
+  productId: String
+  unitsOwned: Float!
+  lockedUnits: Float
+  sellerId: String
+  tradeId: String
+  tradeInfo: trade
+  tradeType: tradeTypeEnum
+  ownerId: String
+  ownerInfo: Account
+}
+
+input UnitOwnershipInput {
+  buyerId: String
+  unitsOwned: Float!
+  lockedUnits: Float
+  sellerId: String
+  tradeId: String
+  tradeType: tradeTypeEnum
+  productId: String
+}
+
+input SubscribePropertyInput {
+  productId: String!
+  units: Float!
+  ownerId: String!
+}
+
 extend type Mutation {
+  makePrimaryOwner(ownerId: String!, productId: String!): Boolean
+  createTradePrimary(input: tradeInput!): tradeOutput
   createTradeForProperty(input: tradeInput!): tradeOutput
+  subscribeToPrimaryProperty(input: SubscribePropertyInput): Boolean
+  purchaseUnits(input: UnitOwnershipInput): Boolean
+  sellUnits(input: UnitOwnershipInput): Boolean
+  updateOwnerShip(ownerId: String!, productId: String!, units: Float! ) : Boolean
+}
+
+type OwnershipOutput {
+  _id: ID
+  ownerId: String
+  sellerId: String
+  unitsOwned: Float
+  productId: String
+  tradeType: String
+  ownerInfo: Account
 }
 
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!): [trade]
+  getUnitOwnership(productId: String, ownerId: String): [UnitOwnership]
 }

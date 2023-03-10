@@ -1,6 +1,10 @@
 import { createRequire } from "module";
 import importAsString from "@reactioncommerce/api-utils/importAsString.js";
-import resolvers from "./resolver/resolver.js";
+
+import Mutation from "./resolver/Mutation.js";
+import Query from "./resolver/Query.js";
+import UnitOwnership from "./resolver/UnitOwnership.js";
+
 const schemas = importAsString("./schema/schema.graphql");
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -11,6 +15,12 @@ console.log("Schema here", schemas);
  * @param {Object} app The ReactionAPI instance
  * @returns {undefined}
  */
+
+const resolvers = {
+  UnitOwnership,
+  Mutation,
+  Query,
+};
 export default async function register(app) {
   await app.registerPlugin({
     label: pkg.label,
@@ -19,6 +29,11 @@ export default async function register(app) {
     collections: {
       Trades: {
         name: "Trades",
+        updatedAt: { type: Date, default: Date.now },
+        createdAt: { type: Date, default: Date.now },
+      },
+      Ownership: {
+        name: "Ownership",
         updatedAt: { type: Date, default: Date.now },
         createdAt: { type: Date, default: Date.now },
       },
