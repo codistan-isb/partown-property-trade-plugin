@@ -23,27 +23,23 @@ export default {
 
       if (!authToken || !userId) return new Error("Unauthorized");
 
-      let { amount } = await Ownership.findOne({
+      let founded = await Ownership.findOne({
         ownerId: userId,
         productId,
       });
 
-      if (amount < price) {
-        return new Error("Bid is greater than total available units");
-      }
-
       let decodedId = decodeOpaqueId(productId).id;
+      console.log("decoded id is ", decodedId);
+      console.log("non decoded id is ", productId);
       const { product } = await Catalog.findOne({
-        _id: decodedId,
+        "product._id": decodedId,
       });
+      if (product?.propertySaleType?.type !== "Primary")
+        return new Error("Not a primary property");
 
-      if (!product) {
-        throw new Error("Property not found");
-      }
+      let primaryTradeCheck = await Trades.findOne({ productId: product?._id });
 
-      let primaryTradeCheck = Trades.find({ productId: product?._id });
-
-      if (primaryTradeCheck && product?.propertySaleType?.type === "Primary") {
+      if (!!primaryTradeCheck?._id) {
         throw new Error("Cannot create multiple trades for primary property");
       }
 
@@ -74,6 +70,7 @@ export default {
         throw new Error("Error creating Trade");
       }
     } catch (err) {
+      console.log(err);
       return err;
     }
   },
@@ -240,8 +237,7 @@ export default {
 
       let { buyerId, unitsOwned, sellerId, tradeId, tradeType, productId } =
         args.input;
-
-      // if (!authToken || !userId) return new   Error("Unauthorized");
+      if (!authToken || !userId) return new Error("Unauthorized");
 
       let tradeFounded = await Trades.findOne({
         sellerId,
@@ -276,13 +272,6 @@ export default {
       if (result?.n > 0) return true;
     } catch (err) {
       console.log("err in purchase or sell units mutation", err);
-      return err;
-    }
-  },
-  async sellUnits(parent, args, context, info) {
-    try {
-    } catch (err) {
-      console.log(err);
       return err;
     }
   },

@@ -14,13 +14,13 @@ type trade implements Node {
   property: CatalogItemProduct
   buyerId: String
   sellerId: String
-  productId: String
-  price: Float
-  area: Float
+  productId: String!
+  price: Float!
+  area: Float!
   expirationTime: String
   tradeType: tradeTypeEnum!
   decorum: String
-  minQty: Float
+  minQty: Float!
   currencyUnit: String
   cancellationReason: String
   endDate: Date
@@ -89,7 +89,7 @@ extend type Mutation {
   subscribeToPrimaryProperty(input: SubscribePropertyInput): Boolean
   purchaseUnits(input: UnitOwnershipInput): Boolean
   sellUnits(input: UnitOwnershipInput): Boolean
-  updateOwnerShip(ownerId: String!, productId: String!, units: Float! ) : Boolean
+  updateOwnerShip(ownerId: String!, productId: String!, units: Float!): Boolean
 }
 
 type OwnershipOutput {

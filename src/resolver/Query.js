@@ -26,8 +26,9 @@ export default {
       if (!authToken || !userId) {
         throw new Error("Unauthorized");
       }
-      let decodedId = decodeOpaqueId(productId);
-      let tradeResults = await Trades.find().toArray();
+      let decodedId = decodeOpaqueId(productId).id;
+
+      let tradeResults = await Trades.find({ productId: decodedId }).toArray();
       return tradeResults;
     } catch (err) {
       console.log("get trades error ", err);
