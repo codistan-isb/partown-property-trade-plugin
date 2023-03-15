@@ -1,5 +1,5 @@
-import getAccountById from "../utils/getAccountById.js";
-import getTradeById from "../utils/getTradeById.js";
+import getAccountById from "../util/getAccountById.js";
+import getTradeById from "../util/getTradeById.js";
 
 export default {
   async ownerInfo(parent, args, context, info) {
