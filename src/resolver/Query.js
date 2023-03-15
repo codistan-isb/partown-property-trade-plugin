@@ -7,6 +7,7 @@ export default {
       let tradeResults = [];
 
       let filter = { createdBy: byUser };
+
       tradeResults = await Trades.find(byUser ? filter : {}).toArray();
       console.log(tradeResults);
       return tradeResults;
@@ -19,6 +20,7 @@ export default {
       let { productId } = args;
       let { auth, authToken, userId, collections } = context;
       let { Trades } = collections;
+
       if (!productId) {
         throw new Error("invalid product");
       }

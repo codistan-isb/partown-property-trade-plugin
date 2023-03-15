@@ -78,15 +78,17 @@ input UnitOwnershipInput {
 
 input SubscribePropertyInput {
   productId: String!
+  tradeId: String!
   units: Float!
   ownerId: String!
+  sellerId: String!
 }
 
 extend type Mutation {
   makePrimaryOwner(ownerId: String!, productId: String!): Boolean
   createTradePrimary(input: tradeInput!): tradeOutput
   createTradeForProperty(input: tradeInput!): tradeOutput
-  subscribeToPrimaryProperty(input: SubscribePropertyInput): Boolean
+  subscribeToPrimaryProperty(input: SubscribePropertyInput!): Boolean
   purchaseUnits(input: UnitOwnershipInput): Boolean
   sellUnits(input: UnitOwnershipInput): Boolean
   updateOwnerShip(ownerId: String!, productId: String!, units: Float!): Boolean
