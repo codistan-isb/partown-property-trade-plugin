@@ -22,12 +22,13 @@ export default async function validateMinQty(collections, tradeId, quantity) {
 
   console.log("result is ", result);
   if (!result) return new Error("Trade Does Not Exist");
-  const { minQty } = result;
+  const { minQty, area } = result;
   console.log("min qty is ", minQty);
   console.log("quantity is ", quantity);
   if (quantity < minQty) {
     console.log("reaching condition");
-
     throw new Error("Quantity cannot be less than minimum quantity");
+  } else if (quantity > area) {
+    throw new Error(`This trade only allows purchases upto ${area} units`);
   }
 }

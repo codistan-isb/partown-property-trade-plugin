@@ -29,7 +29,7 @@ type trade implements Node {
 
 input tradeInput {
   buyerId: String
-  sellerId: String!
+  sellerId: String
   productId: String
   price: Float
   area: Float
@@ -106,6 +106,6 @@ type OwnershipOutput {
 
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
-  getTradesForProperty(productId: String!): [trade]
+  getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
   getUnitOwnership(productId: String, ownerId: String): [UnitOwnership]
 }

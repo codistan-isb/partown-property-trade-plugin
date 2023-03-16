@@ -92,7 +92,6 @@ export default {
       }).toArray();
 
       await checkUserWallet(collections, decodeOpaqueId(userId).id, units);
-      
       await validateMinQty(collections, decodeOpaqueId(tradeId).id, units);
       await selfSubscriptionCheck(collections, ownerId);
 
@@ -151,6 +150,7 @@ export default {
         expirationTime,
         tradeType,
         minQty,
+        createdBy,
         currencyUnit,
         cancellationReason,
       } = args.input;
@@ -160,39 +160,37 @@ export default {
       let { auth, authToken, userId } = context;
 
       if (!authToken || !userId) return new Error("Unauthorized");
-      console.log("userId is ", userId);
-      console.log("product id ", decodeOpaqueId(productId).id);
+
       let ownerRes = await Ownership.findOne({
         ownerId: decodeOpaqueId(userId).id,
         productId: decodeOpaqueId(productId).id,
       });
 
-      console.log("user id is", userId);
-      console.log("owner res is ", ownerRes);
-      if (!ownerRes) return new Error("You don't own this property");
+      if (tradeType === "offer" && !ownerRes)
+        return new Error("You don't own this property");
 
-      if (!units && tradeType === "bid")
-        return new Error(
-          "You are not allowed to create bid-offer for this property"
-        );
+      // if (!units && tradeType === "bid")
+      //   return new Error(
+      //     "You are not allowed to create bid-offer for this property"
+      //   );
 
       let decodedId = decodeOpaqueId(productId).id;
       const { product } = await Catalog.findOne({
-        _id: decodedId,
+        "product._id": decodedId,
       });
 
       if (!product) {
         throw new Error("Property not found");
       }
 
-      console.log("product is ", product);
-      console.log("property sale type is ", product.propertySaleType.type);
+      // console.log("product is ", product);
+      // console.log("property sale type is ", product.propertySaleType.type);
 
-      let primaryTradeCheck = Trades.find({ productId: product?._id });
+      // let primaryTradeCheck = Trades.find({ productId: product?._id });
 
-      if (primaryTradeCheck && product?.propertySaleType?.type === "Primary") {
-        throw new Error("Cannot create multiple trades for primary property");
-      }
+      // if (primaryTradeCheck && product?.propertySaleType?.type === "Primary") {
+      //   throw new Error("Cannot create multiple trades for primary property");
+      // }
 
       let { value } = product.area;
 
@@ -211,6 +209,7 @@ export default {
         minQty,
         productId: decodedId,
         approvalStatus: "pending",
+        createdBy: decodeOpaqueId(createdBy).id,
       };
 
       if (product?._id) {
@@ -261,7 +260,7 @@ export default {
       let { auth, authToken, userId, collections } = context;
       let { Transactions, Accounts, Catalog, Trades, Ownership } = collections;
 
-      let { buyerId, unitsOwned, sellerId, tradeId, tradeType, productId } =
+      let { buyerId, units, sellerId, tradeId, tradeType, productId } =
         args.input;
       if (!authToken || !userId) return new Error("Unauthorized");
 
@@ -269,11 +268,11 @@ export default {
         sellerId,
       });
 
-      console.log("trade founded is ", tradeFounded);
+      let { wallets } = await Accounts.findOne({
+        _id: decodeOpaqueId(buyerId).id,
+      });
 
-      let { wallets } = await Accounts.findOne({ _id: buyerId });
-
-      if (wallets?.amount < unitsOwned)
+      if (wallets?.amount < units)
         return new Error(
           "Insufficient funds in your wallet, please add funds to your wallet first to make this purchase"
         );
@@ -286,16 +285,15 @@ export default {
       let data = {
         ownerId: buyerId,
         sellerId,
-        units: unitsOwned,
+        units,
         productId,
         tradeType,
       };
 
       const res = Ownership.findOne({ ownerId: buyerId, productId: productId });
-      console.log("owner response is ", res);
 
       const { result } = await Ownership.insertOne(data);
-      if (result?.n > 0) return true;
+      return result?.n > 0;
     } catch (err) {
       console.log("err in purchase or sell units mutation", err);
       return err;

@@ -17,7 +17,7 @@ export default {
   },
   async getTradesForProperty(parents, args, context, info) {
     try {
-      let { productId } = args;
+      let { productId, type } = args;
       let { auth, authToken, userId, collections } = context;
       let { Trades } = collections;
 
@@ -29,8 +29,26 @@ export default {
         throw new Error("Unauthorized");
       }
       let decodedId = decodeOpaqueId(productId).id;
+      console.log("user id", userId);
 
-      let tradeResults = await Trades.find({ productId: decodedId }).toArray();
+      let tradeResults = [];
+      if (type) {
+        tradeResults = await Trades.find({
+          productId: decodedId,
+          tradeType: type,
+          createdBy: {
+            $ne: userId,
+          },
+        }).toArray();
+      } else {
+        tradeResults = await Trades.find({
+          productId: decodedId,
+          createdBy: {
+            $ne: userId,
+          },
+        }).toArray();
+      }
+
       return tradeResults;
     } catch (err) {
       console.log("get trades error ", err);
