@@ -2,7 +2,7 @@
   "name": "@partown/partown-api-plugin-trade",
   "description": "Boilerplate Example plugin for the Reaction API",
   "label": "Example Plugin",
-  "version": "6.0.1-development",
+  "version": "8.0.0-development",
   "main": "index.js",
   "type": "module",
   "engines": {
