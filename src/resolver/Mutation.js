@@ -3,6 +3,10 @@ import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
 import validateMinQty from "../util/validateMinQty.js";
 import selfSubscriptionCheck from "../util/selfSubscriptionCheck.js";
 import checkUserWallet from "../util/checkUserWallet.js";
+import updateBuyerWallet from "../util/updateBuyerWallet.js";
+import updateSellerWallet from "../util/updateSellerWallet.js";
+import updatePlatformWallet from "../util/updatePlatformWallet.js";
+import verifyOwnership from "../util/verifyOwnership.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -54,8 +58,7 @@ export default {
         );
       }
       let data = {
-        buyerId,
-        sellerId,
+        sellerId: decodeOpaqueId(sellerId).id,
         price,
         area,
         expirationTime,
@@ -80,10 +83,19 @@ export default {
   async subscribeToPrimaryProperty(parents, args, context, info) {
     try {
       const { collections } = context;
-      let { auth, authToken, userId } = context;
+      let { authToken, userId } = context;
       const { Ownership, Catalog, Accounts, Trades } = collections;
 
-      const { productId, units, ownerId, tradeId, sellerId } = args.input;
+      const {
+        productId,
+        units,
+        ownerId,
+        tradeId,
+        sellerId,
+        price,
+        minQty,
+        serviceCharge,
+      } = args.input;
 
       if (!authToken || !userId) return new Error("Unauthorized");
 
@@ -93,24 +105,35 @@ export default {
 
       await checkUserWallet(collections, decodeOpaqueId(userId).id, units);
       await validateMinQty(collections, decodeOpaqueId(tradeId).id, units);
-      await selfSubscriptionCheck(collections, ownerId);
 
       const { product } = await Catalog.findOne({
         "product._id": decodeOpaqueId(productId).id,
       });
+
+      console.log("product founded is ", product);
+
       let sum = [];
       if (allOwners.length > 1) {
         sum = await Ownership.aggregate([
-          { $match: { productId: productId } },
+          {
+            $match: {
+              productId: decodeOpaqueId(productId).id,
+              ownerId: { $ne: decodeOpaqueId(sellerId).id },
+            },
+          },
           { $group: { _id: "$productId", totalUnits: { $sum: "$amount" } } },
         ]).toArray();
       }
 
       let totalSum = sum[0]?.totalUnits;
-      console.log("total sum is ", totalSum);
-      if (totalSum === product?.area?.value)
-        return new Error("This property has been fully subscribed");
 
+      console.log("total sum is ", totalSum);
+
+      if (totalSum === product?.area?.value || totalSum < minQty) {
+        console.log("product?.area?.value", product?.area?.value);
+
+        return new Error("This property has been fully subscribed");
+      }
       if (totalSum + units > product?.area?.value) {
         return new Error(
           `The total units available for this property are ${
@@ -119,18 +142,39 @@ export default {
         );
       }
 
-      let data = {
-        productId,
-        amount: units,
-        ownerId,
-        tradeId,
+      const filter = { ownerId: decodeOpaqueId(userId).id };
+      const update = {
+        $inc: { amount: units },
+        $setOnInsert: {
+          productId: decodeOpaqueId(productId).id,
+          tradeId: decodeOpaqueId(tradeId).id,
+          ownerId: decodeOpaqueId(userId).id,
+        },
       };
-      const { result } = await Ownership.insertOne(data);
-      if (result?.n > 0) {
+      const options = { upsert: true, returnOriginal: false };
+      const { lastErrorObject } = await Ownership.findOneAndUpdate(
+        filter,
+        update,
+        options
+      );
+
+      if (lastErrorObject?.n > 0) {
         const { result } = await Ownership.update(
           { ownerId: decodeOpaqueId(sellerId).id },
           { $inc: { amount: -units } }
         );
+        await updateBuyerWallet(collections, decodeOpaqueId(userId).id, price);
+        await updateSellerWallet(
+          collections,
+          decodeOpaqueId(sellerId).id,
+          price - serviceCharge
+        );
+        await updatePlatformWallet(
+          collections,
+          decodeOpaqueId("640f0192a9967d6d705c9e74").id,
+          serviceCharge
+        );
+
         return result?.n > 0;
       }
 
@@ -160,6 +204,8 @@ export default {
       let { auth, authToken, userId } = context;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+
+      console.log("buyer id is ", buyerId);
 
       let ownerRes = await Ownership.findOne({
         ownerId: decodeOpaqueId(userId).id,
@@ -210,6 +256,7 @@ export default {
         productId: decodedId,
         approvalStatus: "pending",
         createdBy: decodeOpaqueId(createdBy).id,
+        buyerId: decodeOpaqueId(buyerId).id,
       };
 
       if (product?._id) {
@@ -226,9 +273,8 @@ export default {
   async makePrimaryOwner(parent, args, context, info) {
     try {
       let { Transactions, Accounts, Catalog, Ownership } = context.collections;
-      console.log("making primary owner");
-      const { ownerId, productId } = args;
 
+      const { ownerId, productId } = args;
       const { id } = decodeOpaqueId(productId);
       const { product } = await Catalog.findOne({
         "product._id": decodeOpaqueId(productId).id,
@@ -236,12 +282,14 @@ export default {
       let totalValue = product?.area?.value;
 
       let data = {
-        ownerId,
+        ownerId: decodeOpaqueId(ownerId).id,
         amount: totalValue,
         productId: id,
       };
 
-      let ownerToFind = await Accounts.findOne({ _id: ownerId });
+      let ownerToFind = await Accounts.findOne({
+        _id: decodeOpaqueId(ownerId).id,
+      });
 
       if (!ownerToFind) return new Error("User does not exist");
 
@@ -257,45 +305,125 @@ export default {
   },
   async purchaseUnits(parent, args, context, info) {
     try {
-      let { auth, authToken, userId, collections } = context;
-      let { Transactions, Accounts, Catalog, Trades, Ownership } = collections;
-
-      let { buyerId, units, sellerId, tradeId, tradeType, productId } =
-        args.input;
+      let { authToken, userId, collections } = context;
+      let { Ownership } = collections;
+      let {
+        sellerId,
+        productId,
+        tradeId,
+        units,
+        price,
+        buyerId,
+        serviceCharge,
+        minQty,
+      } = args.input;
       if (!authToken || !userId) return new Error("Unauthorized");
 
-      let tradeFounded = await Trades.findOne({
-        sellerId,
-      });
+      await checkUserWallet(collections, decodeOpaqueId(userId).id, units);
+      await validateMinQty(collections, decodeOpaqueId(tradeId).id, units);
 
-      let { wallets } = await Accounts.findOne({
-        _id: decodeOpaqueId(buyerId).id,
-      });
-
-      if (wallets?.amount < units)
-        return new Error(
-          "Insufficient funds in your wallet, please add funds to your wallet first to make this purchase"
-        );
-
-      if (!tradeFounded) return new Error("Trade Option does not exist");
-
-      if (tradeType === "bid")
-        return new Error("This trade can only be used to sell units");
-
-      let data = {
-        ownerId: buyerId,
-        sellerId,
-        units,
-        productId,
-        tradeType,
+      const filter = { ownerId: decodeOpaqueId(buyerId).id };
+      const update = {
+        $inc: { amount: units },
+        $setOnInsert: {
+          productId: decodeOpaqueId(productId).id,
+          tradeId: decodeOpaqueId(tradeId).id,
+          ownerId: decodeOpaqueId(buyerId).id,
+        },
       };
+      const options = { upsert: true, returnOriginal: false };
+      //update buyer ownership
+      const { lastErrorObject } = await Ownership.findOneAndUpdate(
+        filter,
+        update,
+        options
+      );
+      if (lastErrorObject?.n > 0) {
+        //update seller ownership
+        const { result } = await Ownership.update(
+          { ownerId: decodeOpaqueId(sellerId).id },
+          { $inc: { amount: -units } }
+        );
+        await updateBuyerWallet(
+          collections,
+          decodeOpaqueId(buyerId).id,
+          price - serviceCharge
+        );
+        await updateSellerWallet(collections, sellerId, -price);
+        await updatePlatformWallet(
+          collections,
+          decodeOpaqueId("640f0192a9967d6d705c9e74").id,
+          serviceCharge
+        );
+        return result?.n > 0;
+      }
 
-      const res = Ownership.findOne({ ownerId: buyerId, productId: productId });
-
-      const { result } = await Ownership.insertOne(data);
-      return result?.n > 0;
+      return false;
     } catch (err) {
-      console.log("err in purchase or sell units mutation", err);
+      return err;
+    }
+  },
+  async sellUnits(parent, args, context, info) {
+    try {
+      let { authToken, userId, collections } = context;
+      let { Ownership } = collections;
+      let {
+        sellerId,
+        productId,
+        tradeId,
+        units,
+        price,
+        buyerId,
+        serviceCharge,
+        minQty,
+      } = args.input;
+      if (!authToken || !userId) return new Error("Unauthorized");
+
+      await verifyOwnership(
+        collections,
+        decodeOpaqueId(sellerId).id,
+        decodeOpaqueId(productId).id,
+        units
+      );
+      await validateMinQty(collections, decodeOpaqueId(tradeId).id, units);
+      const filter = { ownerId: decodeOpaqueId(buyerId).id };
+      const update = {
+        $inc: { amount: units },
+        $setOnInsert: {
+          productId: decodeOpaqueId(productId).id,
+          tradeId: decodeOpaqueId(tradeId).id,
+          ownerId: decodeOpaqueId(buyerId).id,
+        },
+      };
+      const options = { upsert: true, returnOriginal: false };
+      //update buyer ownership
+      const { lastErrorObject } = await Ownership.findOneAndUpdate(
+        filter,
+        update,
+        options
+      );
+      if (lastErrorObject?.n > 0) {
+        //update seller ownership
+        const { result } = await Ownership.update(
+          { ownerId: decodeOpaqueId(sellerId).id },
+          { $inc: { amount: -units } }
+        );
+        await updateBuyerWallet(
+          collections,
+          decodeOpaqueId(buyerId).id,
+          price - serviceCharge
+        );
+        await updateSellerWallet(collections, sellerId, -price);
+        await updatePlatformWallet(
+          collections,
+          decodeOpaqueId("640f0192a9967d6d705c9e74").id,
+          serviceCharge
+        );
+        return result?.n > 0;
+      }
+
+      return false;
+    } catch (err) {
       return err;
     }
   },

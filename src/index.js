@@ -4,6 +4,7 @@ import importAsString from "@reactioncommerce/api-utils/importAsString.js";
 import Mutation from "./resolver/Mutation.js";
 import Query from "./resolver/Query.js";
 import UnitOwnership from "./resolver/UnitOwnership.js";
+import trade from "./resolver/trade.js";
 
 const schemas = importAsString("./schema/schema.graphql");
 const require = createRequire(import.meta.url);
@@ -20,6 +21,7 @@ const resolvers = {
   UnitOwnership,
   Mutation,
   Query,
+  trade,
 };
 export default async function register(app) {
   await app.registerPlugin({

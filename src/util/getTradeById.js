@@ -13,6 +13,6 @@
 export default async function getTradeById(context, tradeId) {
   const { collections } = context;
   const { Trades } = collections;
-  let accountResponse = await Trades.findOne({ _id: tradeId });
-  return accountResponse;
+  let tradeRes = await Trades.findOne({ _id: tradeId });
+  return tradeRes;
 }

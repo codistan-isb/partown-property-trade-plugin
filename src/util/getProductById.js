@@ -1,4 +1,3 @@
-import ObjectID from "mongodb";
 /**
  *
  * @method placeBidOnProduct
@@ -11,19 +10,9 @@ import ObjectID from "mongodb";
  * @param {Boolean} args.shouldIncludeArchived - Include archived units in results
  * @returns {Promise<Object[]>} Array of Unit Variant objects.
  */
-export default async function validateMinQty(collections, tradeId, quantity) {
-  const { Trades } = collections;
-
-  const result = await Trades.findOne({
-    _id: ObjectID.ObjectId(tradeId),
-  });
-
-  if (!result) return new Error("Trade Does Not Exist");
-  const { minQty, area } = result;
-
-  if (quantity < minQty) {
-    throw new Error("Cannot purchase less than the minimum quantity");
-  } else if (quantity > area) {
-    throw new Error(`This trade only allows purchases upto ${area} units`);
-  }
+export default async function getProductById(context, productId) {
+  const { collections } = context;
+  const { Catalog } = collections;
+  let catalogItems = await Catalog.findOne({ "product._id": productId });
+  return catalogItems;
 }

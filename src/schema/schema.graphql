@@ -25,6 +25,8 @@ type trade implements Node {
   cancellationReason: String
   endDate: Date
   createdBy: String
+  createdByInfo: Account
+  isDisabled: Boolean
 }
 
 input tradeInput {
@@ -56,7 +58,8 @@ type tradeOutput {
 type UnitOwnership implements Node {
   _id: ID!
   productId: String
-  unitsOwned: Float!
+  productDetails: CatalogItemProduct
+  amount: Float!
   lockedUnits: Float
   sellerId: String
   tradeId: String
@@ -80,8 +83,23 @@ input SubscribePropertyInput {
   productId: String!
   tradeId: String!
   units: Float!
+  price: Float!
+  serviceCharge: Float!
   ownerId: String!
   sellerId: String!
+  minQty: Float!
+}
+
+input sellPropertyInput {
+  productId: String!
+  tradeId: String!
+  units: Float!
+  price: Float!
+  serviceCharge: Float!
+  ownerId: String
+  buyerId: String!
+  sellerId: String
+  minQty: Float!
 }
 
 extend type Mutation {
@@ -89,8 +107,8 @@ extend type Mutation {
   createTradePrimary(input: tradeInput!): tradeOutput
   createTradeForProperty(input: tradeInput!): tradeOutput
   subscribeToPrimaryProperty(input: SubscribePropertyInput!): Boolean
-  purchaseUnits(input: UnitOwnershipInput): Boolean
-  sellUnits(input: UnitOwnershipInput): Boolean
+  purchaseUnits(input: sellPropertyInput): Boolean
+  sellUnits(input: sellPropertyInput): Boolean
   updateOwnerShip(ownerId: String!, productId: String!, units: Float!): Boolean
 }
 
@@ -107,5 +125,6 @@ type OwnershipOutput {
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
-  getUnitOwnership(productId: String, ownerId: String): [UnitOwnership]
+  getUnitOwnership(productId: String!, ownerId: String!): UnitOwnership
+  getUserProperties: [UnitOwnership]
 }

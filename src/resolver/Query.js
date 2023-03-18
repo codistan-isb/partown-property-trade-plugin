@@ -1,6 +1,6 @@
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
 export default {
-  async getTrades(parents, args, context, info) {
+  async getTrades(parent, args, context, info) {
     try {
       let { Trades } = context.collections;
       let { byUser } = args.input;
@@ -15,7 +15,7 @@ export default {
       console.log("get trades error ", err);
     }
   },
-  async getTradesForProperty(parents, args, context, info) {
+  async getTradesForProperty(parent, args, context, info) {
     try {
       let { productId, type } = args;
       let { auth, authToken, userId, collections } = context;
@@ -55,13 +55,34 @@ export default {
       return err;
     }
   },
-  async getUnitOwnership(parents, args, context, info) {
+  async getUnitOwnership(parent, args, context, info) {
     try {
-      let { productId, ownerId } = args;
       let { authToken, userId, collections } = context;
       let { Ownership } = collections;
-      const owner = await Ownership.find({ ownerId }).toArray();
+      let { productId, ownerId } = args;
+      let data = {
+        productId: decodeOpaqueId(productId).id,
+        ownerId: decodeOpaqueId(ownerId).id,
+      };
+      if (!authToken || !userId) return new Error("Unauthorized");
+      const owner = await Ownership.findOne(data);
+      if (!owner) return new Error("Owner not found");
+      console.log("owner is ", owner);
       return owner;
+    } catch (err) {
+      return err;
+    }
+  },
+  async getUserProperties(parent, args, context, info) {
+    try {
+      let { authToken, userId, collections } = context;
+      let { Ownership } = collections;
+      if (!authToken || !userId) return new Error("Unauthorized");
+
+      let ownerProperties = Ownership.find({
+        ownerId: decodeOpaqueId(userId).id,
+      }).toArray();
+      return ownerProperties;
     } catch (err) {
       return err;
     }
