@@ -17,7 +17,7 @@ export default async function updateBuyerWallet(collections, buyerId, funds) {
   const res = await Accounts.updateOne(
     { _id: buyerId },
     {
-      $inc: { "wallets.amount": -funds },
+      $inc: { "wallets.amount": funds },
     }
   );
 }

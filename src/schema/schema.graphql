@@ -9,6 +9,11 @@ enum approvalStatusEnum {
   cancelled
 }
 
+enum completionStatusEnum {
+  completed
+  inProgress
+}
+
 type trade implements Node {
   _id: ID!
   property: CatalogItemProduct
@@ -27,6 +32,7 @@ type trade implements Node {
   createdBy: String
   createdByInfo: Account
   isDisabled: Boolean
+  completionStatus: completionStatusEnum
 }
 
 input tradeInput {
