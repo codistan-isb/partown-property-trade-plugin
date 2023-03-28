@@ -87,4 +87,20 @@ export default {
       return err;
     }
   },
+  async myTrades(parent, { productId }, context, info) {
+    try {
+      let { authToken, userId, collections } = context;
+      let { Trades } = collections;
+
+      if (!authToken || !userId) return new Error("Unauthorized");
+      let decodedProductId = decodeOpaqueId(productId).id;
+      let allTrades = Trades.find({
+        createdBy: userId,
+        productId: decodedProductId,
+      }).toArray();
+      return allTrades;
+    } catch (err) {
+      return err;
+    }
+  },
 };

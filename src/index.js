@@ -26,7 +26,7 @@ const resolvers = {
 export default async function register(app) {
   await app.registerPlugin({
     label: pkg.label,
-    name: pkg.name,
+    name: "trade",
     version: pkg.version,
     collections: {
       Trades: {

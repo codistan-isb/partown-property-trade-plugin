@@ -131,6 +131,7 @@ type OwnershipOutput {
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
+  myTrades(productId: String!): [trade]
   getUnitOwnership(productId: String!, ownerId: String!): UnitOwnership
   getUserProperties: [UnitOwnership]
 }

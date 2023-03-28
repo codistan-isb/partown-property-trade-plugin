@@ -18,6 +18,6 @@ export default {
     let { product } = await getProductById(context, parent.productId);
     console.log("product in product details is ", product);
 
-    return { product };
+    return { product: product };
   },
 };

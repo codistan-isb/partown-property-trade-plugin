@@ -11,21 +11,15 @@ import ObjectID from "mongodb";
  * @param {Boolean} args.shouldIncludeArchived - Include archived units in results
  * @returns {Promise<Object[]>} Array of Unit Variant objects.
  */
-export default async function validateMinQty(collections, tradeId, quantity) {
+export default async function updateTradeUnits(collections, tradeId, quantity) {
   const { Trades } = collections;
 
-  const result = await Trades.findOne({
-    _id: ObjectID.ObjectId(tradeId),
-  });
-
-  if (!result) return new Error("Trade Does Not Exist");
-  const { minQty, area } = result;
-
-  if (area === 0) {
-    throw new Error("This trade has been completed");
-  }
-
-  if (quantity > area) {
-    throw new Error(`You can only purchase ${area} units for this trade`);
-  }
+  const result = await Trades.update(
+    {
+      _id: ObjectID.ObjectId(tradeId),
+    },
+    { $inc: { area: quantity } }
+  );
+  console.log("update trade result is ", result);
+  return result?.n > 0;
 }
