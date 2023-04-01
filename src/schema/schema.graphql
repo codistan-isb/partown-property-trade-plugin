@@ -12,16 +12,18 @@ enum approvalStatusEnum {
 enum completionStatusEnum {
   completed
   inProgress
+  cancelled
 }
 
 type trade implements Node {
   _id: ID!
-  property: CatalogItemProduct
   buyerId: String
   sellerId: String
   productId: String!
+  productDetails: CatalogItemProduct
   price: Float!
   area: Float!
+  originalQuantity: Float
   expirationTime: String
   tradeType: tradeTypeEnum!
   decorum: String
@@ -66,13 +68,16 @@ type UnitOwnership implements Node {
   productId: String
   productDetails: CatalogItemProduct
   amount: Float!
-  lockedUnits: Float
+  unitsEscrow: Float
   sellerId: String
   tradeId: String
   tradeInfo: trade
   tradeType: tradeTypeEnum
   ownerId: String
   ownerInfo: Account
+  purchaseHistory: [Float]
+  unitsHistory: [Float]
+  tradeHistory: [tradeTypeEnum]
 }
 
 input UnitOwnershipInput {
@@ -83,6 +88,9 @@ input UnitOwnershipInput {
   tradeId: String
   tradeType: tradeTypeEnum
   productId: String
+  purchaseHistory: [Float]
+  unitsHistory: [Float]
+  tradeHistory: [tradeTypeEnum]
 }
 
 input SubscribePropertyInput {
@@ -110,6 +118,7 @@ input sellPropertyInput {
 
 extend type Mutation {
   makePrimaryOwner(ownerId: String!, productId: String!): Boolean
+  makeResaleOwner(ownerId: String!, productId: String!, units: Float!): Boolean
   createTradePrimary(input: tradeInput!): tradeOutput
   createTradeForProperty(input: tradeInput!): tradeOutput
   subscribeToPrimaryProperty(input: SubscribePropertyInput!): Boolean
@@ -131,7 +140,8 @@ type OwnershipOutput {
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
-  myTrades(productId: String!): [trade]
+  myTrades(filter: completionStatusEnum): [trade]
   getUnitOwnership(productId: String!, ownerId: String!): UnitOwnership
   getUserProperties: [UnitOwnership]
+  remainingQuantity(productId: String!): Float
 }

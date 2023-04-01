@@ -39,12 +39,18 @@ export default {
           createdBy: {
             $ne: userId,
           },
+          completionStatus: {
+            $ne: "completed",
+          },
         }).toArray();
       } else {
         tradeResults = await Trades.find({
           productId: decodedId,
           createdBy: {
             $ne: userId,
+          },
+          completionStatus: {
+            $ne: "completed",
           },
         }).toArray();
       }
@@ -87,19 +93,92 @@ export default {
       return err;
     }
   },
-  async myTrades(parent, { productId }, context, info) {
+  async myTrades(parent, { filter }, context, info) {
     try {
       let { authToken, userId, collections } = context;
       let { Trades } = collections;
 
       if (!authToken || !userId) return new Error("Unauthorized");
-      let decodedProductId = decodeOpaqueId(productId).id;
+      let matchStage = {};
+      if (filter === "completed") {
+        matchStage = { completionStatus: "completed" };
+      }
+
       let allTrades = Trades.find({
         createdBy: userId,
-        productId: decodedProductId,
+        ...matchStage,
       }).toArray();
+
       return allTrades;
     } catch (err) {
+      return err;
+    }
+  },
+  async remainingQuantity(parent, { productId }, context, info) {
+    try {
+      let { collections, userId, authToken } = context;
+
+      let decodedProductId = decodeOpaqueId(productId).id;
+
+      let { Trades, Catalog } = collections;
+      let { product } = await Catalog.findOne({
+        "product._id": decodedProductId,
+      });
+      let sum = [];
+      if (!userId || !userId) {
+        sum = await Trades.aggregate([
+          {
+            $match: {
+              productId: decodedProductId,
+              tradeType: "offer",
+            },
+          },
+          {
+            $group: {
+              _id: "$productId",
+              totalUnits: { $sum: "$area" },
+              totalOriginal: { $sum: "$originalQuantity" },
+            },
+          },
+        ]).toArray();
+      } else {
+        sum = await Trades.aggregate([
+          {
+            $match: {
+              productId: decodedProductId,
+              tradeType: "offer",
+            },
+          },
+          {
+            $match: {
+              sellerId: { $ne: userId },
+            },
+          },
+          {
+            $group: {
+              _id: "$productId",
+              totalUnits: { $sum: "$area" },
+              totalOriginal: { $sum: "$originalQuantity" },
+            },
+          },
+        ]).toArray();
+      }
+
+      console.log("sum", sum);
+
+      if (sum.length === 0) {
+        return 0;
+      }
+
+      let percentage = (
+        (sum[0]?.totalUnits / sum[0]?.totalOriginal) *
+        100
+      ).toFixed(2);
+
+      console.log("percentage is ", percentage);
+      return percentage;
+    } catch (err) {
+      console.log("resale property quantity query");
       return err;
     }
   },

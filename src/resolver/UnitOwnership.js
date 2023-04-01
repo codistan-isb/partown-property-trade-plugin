@@ -15,9 +15,9 @@ export default {
     return trade;
   },
   async productDetails(parent, args, context, info) {
+    console.log("product details are");
     let { product } = await getProductById(context, parent.productId);
     console.log("product in product details is ", product);
-
     return { product: product };
   },
 };

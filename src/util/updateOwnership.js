@@ -11,30 +11,20 @@ import ObjectID from "mongodb";
  * @param {Boolean} args.shouldIncludeArchived - Include archived units in results
  * @returns {Promise<Object[]>} Array of Unit Variant objects.
  */
-export default async function updateTradeUnits(
+export default async function updateOwnership(
   collections,
-  tradeId,
-  quantity,
-  minQty
+  sellerId,
+  productId,
+  units
 ) {
-  const { Trades } = collections;
+  const { Ownership } = collections;
 
-  const result = await Trades.update(
+  const { result } = await Ownership.updateOne(
+    { ownerId: sellerId, productId },
     {
-      _id: ObjectID.ObjectId(tradeId),
-    },
-    { $inc: { area: quantity } }
+      $inc: { amount: -units, unitsEscrow: units },
+    }
   );
-
-  // Check if the area is less than minQty and update the minQty field
-  const trade = await Trades.findOne({ _id: ObjectID.ObjectId(tradeId) });
-  if (trade.area < minQty) {
-    const updateResult = await Trades.update(
-      { _id: ObjectID.ObjectId(tradeId) },
-      { $set: { minQty: trade.area } }
-    );
-    console.log("update minQty result is ", updateResult);
-  }
-
+  console.log("result is ", result);
   return result?.n > 0;
 }

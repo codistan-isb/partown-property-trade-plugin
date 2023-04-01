@@ -11,6 +11,5 @@ export default async function updateAvailableQuantity(
     { $inc: { "product.area.availableQuantity": units } }
   );
 
-  console.log("result from update catalog is  ", result);
   return result?.n > 0;
 }

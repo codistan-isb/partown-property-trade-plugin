@@ -9,6 +9,8 @@ import updatePlatformWallet from "../util/updatePlatformWallet.js";
 import verifyOwnership from "../util/verifyOwnership.js";
 import updateAvailableQuantity from "../util/updateAvailableQuantity.js";
 import updateTradeUnits from "../util/updateTradeUnits.js";
+import updateOwnership from "../util/updateOwnership.js";
+import closeTrade from "../util/closeTrade.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -26,10 +28,13 @@ export default {
         currencyUnit,
         cancellationReason,
       } = args.input;
-      let { Transactions, Accounts, Catalog, Products, Trades, Ownership } =
-        context.collections;
+      let { authToken, userId, collections } = context;
 
-      let { auth, authToken, userId } = context;
+      let { Transactions, Accounts, Catalog, Products, Trades, Ownership } =
+        collections;
+
+      let decodedSellerId = decodeOpaqueId(sellerId).id;
+      let decodedProductId = decodeOpaqueId(productId).id;
 
       if (!authToken || !userId) return new Error("Unauthorized");
 
@@ -37,6 +42,7 @@ export default {
         ownerId: decodeOpaqueId(userId).id,
         productId: decodeOpaqueId(productId).id,
       });
+
       if (!checkOwnerExist) return new Error("You don't own this property");
 
       let decodedId = decodeOpaqueId(productId).id;
@@ -44,8 +50,14 @@ export default {
       const { product } = await Catalog.findOne({
         "product._id": decodedId,
       });
+
       if (product?.propertySaleType?.type !== "Primary")
         return new Error("Not a primary property");
+
+      if (minQty > area)
+        return new Error(
+          "Minimum Quantity cannot be greater than the quantity specified"
+        );
 
       let primaryTradeCheck = await Trades.findOne({ productId: product?._id });
 
@@ -64,8 +76,9 @@ export default {
         sellerId: decodeOpaqueId(sellerId).id,
         price,
         area,
+        originalQuantity: area,
         expirationTime,
-        tradeType: "bid",
+        tradeType: "offer",
         minQty,
         productId: decodedId,
         approvalStatus: "pending",
@@ -76,6 +89,12 @@ export default {
       if (product?._id) {
         const { insertedId } = await Trades.insertOne(data);
         if (insertedId) {
+          await updateOwnership(
+            collections,
+            decodedSellerId,
+            decodedProductId,
+            area
+          );
           return { _id: insertedId };
         }
         throw new Error("Error creating Trade");
@@ -103,10 +122,9 @@ export default {
       } = args.input;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+
       const decodedProductId = decodeOpaqueId(productId).id;
-
       const decodedTradeId = decodeOpaqueId(tradeId).id;
-
       const allOwners = await Ownership.find({
         productId: decodedProductId,
       }).toArray();
@@ -157,7 +175,10 @@ export default {
         );
       }
 
-      const filter = { ownerId: decodeOpaqueId(userId).id };
+      const filter = {
+        ownerId: decodeOpaqueId(userId).id,
+        productId: decodedProductId,
+      };
       const update = {
         $inc: { amount: units },
         $setOnInsert: {
@@ -172,12 +193,15 @@ export default {
         update,
         options
       );
-
+      let x = price - serviceCharge;
+      let FundsToUpdate = (3 / 100) * x;
+      let sellerFundsToUpdate = x - FundsToUpdate;
       if (lastErrorObject?.n > 0) {
         const { result } = await Ownership.update(
-          { ownerId: decodeOpaqueId(sellerId).id },
-          { $inc: { amount: -units } }
+          { ownerId: decodeOpaqueId(sellerId).id, productId: decodedProductId },
+          { $inc: { unitsEscrow: -units } }
         );
+
         // update buyer funds
         await updateWallet(collections, decodeOpaqueId(userId).id, -price);
 
@@ -185,7 +209,7 @@ export default {
         await updateWallet(
           collections,
           decodeOpaqueId(sellerId).id,
-          price - serviceCharge
+          sellerFundsToUpdate
         );
 
         //update admin/platform funds
@@ -195,9 +219,9 @@ export default {
           serviceCharge
         );
 
-        await updateAvailableQuantity(collections, decodedProductId, -units);
-        await updateTradeUnits(collections, decodedTradeId, -units);
-
+        // await updateAvailableQuantity(collections, decodedProductId, -units);
+        await updateTradeUnits(collections, decodedTradeId, -units, minQty);
+        await closeTrade(collections, decodedTradeId);
         return result?.n > 0;
       }
 
@@ -236,8 +260,13 @@ export default {
       if (tradeType === "offer" && !ownerRes)
         return new Error("You don't own this property");
 
-      console.log("owner response is ", ownerRes);
-
+      if (minQty > area)
+        return new Error(
+          "Minimum Quantity cannot be greater than the quantity specified"
+        );
+      if (ownerRes?.amount < area) {
+        return new Error(`You cannot sell more than ${ownerRes?.amount} units`);
+      }
       // if (!units && tradeType === "bid")
       //   return new Error(
       //     "You are not allowed to create bid-offer for this property"
@@ -281,6 +310,7 @@ export default {
           sellerId: decodeOpaqueId(sellerId).id,
           price,
           area,
+          originalQuantity: area,
           expirationTime,
           tradeType,
           minQty,
@@ -307,6 +337,21 @@ export default {
       if (product?._id) {
         const { insertedId } = await Trades.insertOne(data);
         if (insertedId) {
+          if (buyerId) {
+            await Accounts.updateOne(
+              { _id: decodeOpaqueId(buyerId).id },
+              {
+                $inc: { "wallets.amount": -price, "wallets.escrow": price },
+              }
+            );
+          } else if (sellerId) {
+            await updateOwnership(
+              collections,
+              decodeOpaqueId(sellerId).id,
+              decodeOpaqueId(productId).id,
+              area
+            );
+          }
           return { _id: insertedId };
         }
         throw new Error("Error creating Trade");
@@ -317,18 +362,33 @@ export default {
   },
   async makePrimaryOwner(parent, args, context, info) {
     try {
-      let { Transactions, Accounts, Catalog, Ownership } = context.collections;
+      let { collections } = context;
+      let { Transactions, Accounts, Catalog, Ownership } = collections;
 
       const { ownerId, productId } = args;
       const { id } = decodeOpaqueId(productId);
-      const { product } = await Catalog.findOne({
+
+      const ownerCheck = await Ownership.findOne({
+        productId: id,
+      });
+      console.log("owner check is ", ownerCheck);
+      if (ownerCheck)
+        return new Error(
+          "You have already assigned an owner for this property"
+        );
+
+      const { product, propertySaleType } = await Catalog.findOne({
         "product._id": decodeOpaqueId(productId).id,
       });
       let totalValue = product?.area?.value;
+      console.log("property sale type is ", propertySaleType);
+      if (propertySaleType?.type !== "Primary")
+        return new Error("Not a primary property");
 
       let data = {
         ownerId: decodeOpaqueId(ownerId).id,
         amount: totalValue,
+        unitsEscrow: 0,
         productId: id,
       };
 
@@ -340,6 +400,73 @@ export default {
 
       const { result } = await Ownership.insertOne(data);
       if (result) {
+        await updateAvailableQuantity(collections, id, -totalValue);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.log("err in make primary owner mutation ", err);
+      return err;
+    }
+  },
+  async makeResaleOwner(parent, args, context, info) {
+    try {
+      let { collections } = context;
+      let { Transactions, Accounts, Catalog, Ownership } = collections;
+
+      const { ownerId, productId, units } = args;
+      const { id } = decodeOpaqueId(productId);
+
+      const { product, propertySaleType } = await Catalog.findOne({
+        "product._id": id,
+      });
+
+      // let totalValue = product?.area?.value;
+      let remainingValue = product?.area?.availableQuantity;
+
+      console.log("sale type is ", propertySaleType);
+      if (propertySaleType?.type !== "Resale")
+        return new Error("Not a resale property");
+
+      if (units > remainingValue)
+        return new Error(
+          `You can only assign ownership for ${remainingValue} remaining Units`
+        );
+
+      // let data = {
+      //   ownerId: decodeOpaqueId(ownerId).id,
+      //   amount: units,
+      //   unitsEscrow: 0,
+      //   productId: id,
+      // };
+
+      let ownerToFind = await Accounts.findOne({
+        _id: decodeOpaqueId(ownerId).id,
+      });
+
+      if (!ownerToFind) return new Error("User does not exist");
+      const filter = {
+        ownerId: decodeOpaqueId(ownerId).id,
+        productId: decodeOpaqueId(productId).id,
+      };
+      const update = {
+        $inc: { amount: units },
+        $setOnInsert: {
+          unitsEscrow: 0,
+          ownerId: decodeOpaqueId(ownerId).id,
+          productId: decodeOpaqueId(productId).id,
+        },
+      };
+      const options = { upsert: true };
+
+      const { lastErrorObject } = await Ownership.findOneAndUpdate(
+        filter,
+        update,
+        options
+      );
+      console.log("last error object", lastErrorObject);
+      if (lastErrorObject?.n > 0) {
+        await updateAvailableQuantity(collections, id, -units);
         return true;
       }
       return false;
@@ -356,6 +483,7 @@ export default {
         sellerId,
         productId,
         tradeId,
+        tradeType,
         units,
         price,
         buyerId,
@@ -365,24 +493,15 @@ export default {
 
       if (!authToken || !userId) return new Error("Unauthorized");
 
-      console.log("input is ", {
-        sellerId,
-        productId,
-        tradeId,
-        units,
-        price,
-        buyerId,
-        serviceCharge,
-        minQty,
-      });
-
       const decodedBuyerId = decodeOpaqueId(buyerId).id;
       const decodedSellerId = decodeOpaqueId(sellerId).id;
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
 
-      await checkUserWallet(collections, decodedBuyerId, units);
-      await validateMinQty(collections, decodedTradeId, minQty);
+      await checkUserWallet(collections, decodedBuyerId, price + serviceCharge);
+      await validateMinQty(collections, decodedTradeId, units);
+
+      console.log("validating min quantity");
 
       const filter = { ownerId: decodedBuyerId, productId: decodedProductId };
       const update = {
@@ -392,7 +511,13 @@ export default {
           tradeId: decodedTradeId,
           ownerId: decodedBuyerId,
         },
+        $push: {
+          purchaseHistory: price,
+          unitsHistory: units,
+          tradeHistory: tradeType,
+        },
       };
+
       const options = { upsert: true, returnOriginal: false };
 
       // Update buyer ownership
@@ -411,7 +536,7 @@ export default {
             ownerId: decodedSellerId,
             productId: decodedProductId,
           },
-          { $inc: { amount: -units } }
+          { $inc: { unitsEscrow: -units } }
         );
 
         const netPrice = price - serviceCharge;
@@ -426,9 +551,9 @@ export default {
             decodeOpaqueId("640f0192a9967d6d705c9e74").id,
             serviceCharge
           ),
-          updateTradeUnits(collections, decodedTradeId, -units),
+          updateTradeUnits(collections, decodedTradeId, -units, minQty),
         ]);
-
+        await closeTrade(collections, decodedTradeId);
         return result?.n > 0;
       }
 
@@ -488,8 +613,9 @@ export default {
             ownerId: decodeOpaqueId(sellerId).id,
             productId: decodeOpaqueId(productId).id,
           },
-          { $inc: { amount: -units } }
+          { $inc: { unitsEscrow: -units } }
         );
+
         await Promise.all([
           updateWallet(collections, decodedBuyerId, -price),
 
@@ -500,25 +626,12 @@ export default {
             serviceCharge
           ),
           updateTradeUnits(collections, decodedTradeId, -units),
+          closeTrade(collections, decodedTradeId),
         ]);
         return result?.n > 0;
       }
 
       return false;
-    } catch (err) {
-      return err;
-    }
-  },
-  async updateOwnerShip(parent, args, context, info) {
-    try {
-      const { ownerId, productId, units, buyerId } = args;
-      const { Ownership } = context.collections;
-      const sellerUpdate = await Ownership.update(
-        { productId, ownerId },
-        { $inc: { units: units } }
-      );
-      console.log("seller update is ", sellerUpdate);
-      return sellerUpdate?.result?.n > 0;
     } catch (err) {
       return err;
     }

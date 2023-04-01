@@ -25,7 +25,13 @@ export default async function validateMinQty(collections, tradeId, quantity) {
     throw new Error("This trade has been completed");
   }
 
+  if (quantity < minQty) {
+    throw new Error(
+      `This trade does not allow purchases less than ${minQty} units`
+    );
+  }
+
   if (quantity > area) {
-    throw new Error(`You can only purchase ${area} units for this trade`);
+    throw new Error(`You can only purchase ${area} units against this trade`);
   }
 }

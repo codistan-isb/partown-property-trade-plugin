@@ -11,4 +11,8 @@ export default {
     console.log("createByDetails firstName is ", createByDetails);
     return createByDetails;
   },
+  async productDetails(parent, args, context, info) {
+    let { product } = await getProductById(context, parent.productId);
+    return { product };
+  },
 };
