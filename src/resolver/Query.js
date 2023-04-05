@@ -182,4 +182,27 @@ export default {
       return err;
     }
   },
+  async propertyVotes(parent, { productId }, context, info) {
+    try {
+      let { Votes } = context.collections;
+      let decodedProductId = decodeOpaqueId(productId).id;
+      let result = await Votes.aggregate([
+        { $match: { productId: decodedProductId } },
+        {
+          $group: {
+            _id: "$voteType",
+            count: { $sum: 1 },
+          },
+        },
+      ]).toArray();
+      const upVotesCount =
+        result.find((item) => item._id === "UPVOTE")?.count || 0;
+      const downVotesCount =
+        result.find((item) => item._id === "DOWNVOTE")?.count || 0;
+
+      return { upVotesCount, downVotesCount };
+    } catch (err) {
+      return err;
+    }
+  },
 };

@@ -13,6 +13,7 @@
 export default async function getAccountById(context, accountId) {
   const { collections } = context;
   const { Accounts } = collections;
+
   let accountResponse = await Accounts.findOne({ _id: accountId });
   return accountResponse;
 }

@@ -63,6 +63,13 @@ type tradeOutput {
   _id: String
 }
 
+type ownershipHistory {
+  date: DateTime
+  quantity: Float
+  price: Float
+  tradeType: String
+}
+
 type UnitOwnership implements Node {
   _id: ID!
   productId: String
@@ -75,9 +82,8 @@ type UnitOwnership implements Node {
   tradeType: tradeTypeEnum
   ownerId: String
   ownerInfo: Account
-  purchaseHistory: [Float]
-  unitsHistory: [Float]
   tradeHistory: [tradeTypeEnum]
+  ownershipHistory: [ownershipHistory]
 }
 
 input UnitOwnershipInput {
@@ -116,17 +122,6 @@ input sellPropertyInput {
   minQty: Float!
 }
 
-extend type Mutation {
-  makePrimaryOwner(ownerId: String!, productId: String!): Boolean
-  makeResaleOwner(ownerId: String!, productId: String!, units: Float!): Boolean
-  createTradePrimary(input: tradeInput!): tradeOutput
-  createTradeForProperty(input: tradeInput!): tradeOutput
-  subscribeToPrimaryProperty(input: SubscribePropertyInput!): Boolean
-  purchaseUnits(input: sellPropertyInput): Boolean
-  sellUnits(input: sellPropertyInput): Boolean
-  updateOwnerShip(ownerId: String!, productId: String!, units: Float!): Boolean
-}
-
 type OwnershipOutput {
   _id: ID
   ownerId: String
@@ -137,6 +132,39 @@ type OwnershipOutput {
   ownerInfo: Account
 }
 
+enum VoteTypeEnum {
+  UPVOTE
+  DOWNVOTE
+}
+
+type Vote {
+  productId: String
+  userId: String
+  voteType: VoteTypeEnum
+}
+
+input voteInput {
+  productId: String
+  voteType: VoteTypeEnum
+}
+
+type voteOutput {
+  upVotesCount: Int
+  downVotesCount: Int
+}
+
+extend type Mutation {
+  makePrimaryOwner(ownerId: String!, productId: String!): Boolean
+  makeResaleOwner(ownerId: String!, productId: String!, units: Float!): Boolean
+  createTradePrimary(input: tradeInput!): tradeOutput
+  createTradeForProperty(input: tradeInput!): tradeOutput
+  subscribeToPrimaryProperty(input: SubscribePropertyInput!): Boolean
+  purchaseUnits(input: sellPropertyInput): Boolean
+  sellUnits(input: sellPropertyInput): Boolean
+  updateOwnerShip(ownerId: String!, productId: String!, units: Float!): Boolean
+  voteProperty(input: voteInput!): Boolean
+}
+
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
@@ -144,4 +172,5 @@ extend type Query {
   getUnitOwnership(productId: String!, ownerId: String!): UnitOwnership
   getUserProperties: [UnitOwnership]
   remainingQuantity(productId: String!): Float
+  propertyVotes(productId: String!): voteOutput
 }

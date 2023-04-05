@@ -11,6 +11,7 @@ import updateAvailableQuantity from "../util/updateAvailableQuantity.js";
 import updateTradeUnits from "../util/updateTradeUnits.js";
 import updateOwnership from "../util/updateOwnership.js";
 import closeTrade from "../util/closeTrade.js";
+import sendTradeCreationEmail from "../util/sendTradeCreationEmail.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -32,6 +33,13 @@ export default {
 
       let { Transactions, Accounts, Catalog, Products, Trades, Ownership } =
         collections;
+
+      if (!authToken || !userId) return new Error("Unauthorized");
+      // let res = await sendTradeCreationEmail(
+      //   context,
+      //   "accounts/verifyEmail",
+      //   userId
+      // );
 
       let decodedSellerId = decodeOpaqueId(sellerId).id;
       let decodedProductId = decodeOpaqueId(productId).id;
@@ -108,7 +116,7 @@ export default {
     try {
       const { collections } = context;
       let { authToken, userId } = context;
-      const { Ownership, Catalog, Accounts, Trades } = collections;
+      const { Ownership, Catalog, Accounts, Trades, ProductRate } = collections;
 
       const {
         productId,
@@ -131,12 +139,21 @@ export default {
 
       // const totalPrice = units * price;
       //1% service charge
-      const service = price / 100;
+      let rates = await ProductRate.findOne({ productType: "Primary" });
+      console.log("rates are ", rates);
+      let buyerFee = 0;
+      let sellerFee = 0;
+      if (rates?.buyerFee) {
+        buyerFee = (rates.buyerFee / 100) * price;
+      }
+      if (rates?.sellerFee) {
+        buyerFee = (rates.sellerFee / 100) * price;
+      }
 
       await checkUserWallet(
         collections,
         decodeOpaqueId(userId).id,
-        price + service
+        price + buyerFee
       );
 
       await validateMinQty(collections, decodedTradeId, units);
@@ -186,6 +203,14 @@ export default {
           tradeId: decodedTradeId,
           ownerId: decodeOpaqueId(userId).id,
         },
+        $push: {
+          ownershipHistory: {
+            price: price,
+            quantity: units,
+            date: new Date(),
+            tradeType: "",
+          },
+        },
       };
       const options = { upsert: true, returnOriginal: false };
       const { lastErrorObject } = await Ownership.findOneAndUpdate(
@@ -193,9 +218,10 @@ export default {
         update,
         options
       );
-      let x = price - serviceCharge;
-      let FundsToUpdate = (3 / 100) * x;
-      let sellerFundsToUpdate = x - FundsToUpdate;
+
+      const netBuyerPrice = price + buyerFee;
+      const netSellerPrice = price - sellerFee;
+      const netServiceCharge = buyerFee + sellerFee;
       if (lastErrorObject?.n > 0) {
         const { result } = await Ownership.update(
           { ownerId: decodeOpaqueId(sellerId).id, productId: decodedProductId },
@@ -203,20 +229,24 @@ export default {
         );
 
         // update buyer funds
-        await updateWallet(collections, decodeOpaqueId(userId).id, -price);
+        await updateWallet(
+          collections,
+          decodeOpaqueId(userId).id,
+          -netBuyerPrice
+        );
 
         // update seller funds
         await updateWallet(
           collections,
           decodeOpaqueId(sellerId).id,
-          sellerFundsToUpdate
+          netSellerPrice
         );
 
         //update admin/platform funds
         await updateWallet(
           collections,
           decodeOpaqueId("640f0192a9967d6d705c9e74").id,
-          serviceCharge
+          netServiceCharge
         );
 
         // await updateAvailableQuantity(collections, decodedProductId, -units);
@@ -478,7 +508,7 @@ export default {
   async purchaseUnits(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Ownership } = collections;
+      const { Ownership, ProductRate } = collections;
       const {
         sellerId,
         productId,
@@ -498,7 +528,16 @@ export default {
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
 
-      await checkUserWallet(collections, decodedBuyerId, price + serviceCharge);
+      let rates = await ProductRate.findOne({ productType: "Resale" });
+      let buyerFee = 0;
+      let sellerFee = 0;
+      if (rates?.buyerFee) {
+        buyerFee = (rates.buyerFee / 100) * price;
+      }
+      if (rates?.sellerFee) {
+        buyerFee = (rates.sellerFee / 100) * price;
+      }
+      await checkUserWallet(collections, decodedBuyerId, price + buyerFee);
       await validateMinQty(collections, decodedTradeId, units);
 
       console.log("validating min quantity");
@@ -512,9 +551,12 @@ export default {
           ownerId: decodedBuyerId,
         },
         $push: {
-          purchaseHistory: price,
-          unitsHistory: units,
-          tradeHistory: tradeType,
+          ownershipHistory: {
+            price: price,
+            quantity: units,
+            tradeType: "buy",
+            date: new Date(),
+          },
         },
       };
 
@@ -539,17 +581,19 @@ export default {
           { $inc: { unitsEscrow: -units } }
         );
 
-        const netPrice = price - serviceCharge;
+        const netBuyerPrice = price + buyerFee;
+        const netSellerPrice = price - sellerFee;
+        const netServiceCharge = buyerFee + sellerFee;
 
         // Update buyer, seller, and platform wallets
         await Promise.all([
-          updateWallet(collections, decodedBuyerId, -netPrice),
+          updateWallet(collections, decodedBuyerId, -netBuyerPrice),
 
-          updateWallet(collections, decodedSellerId, price),
+          updateWallet(collections, decodedSellerId, netSellerPrice),
           updateWallet(
             collections,
             decodeOpaqueId("640f0192a9967d6d705c9e74").id,
-            serviceCharge
+            netServiceCharge
           ),
           updateTradeUnits(collections, decodedTradeId, -units, minQty),
         ]);
@@ -565,7 +609,7 @@ export default {
   async sellUnits(parent, args, context, info) {
     try {
       let { authToken, userId, collections } = context;
-      let { Ownership } = collections;
+      let { Ownership, ProductRate } = collections;
       let {
         sellerId,
         productId,
@@ -580,6 +624,16 @@ export default {
       if (!authToken || !userId) return new Error("Unauthorized");
       let decodedTradeId = decodeOpaqueId(tradeId).id;
       let decodedBuyerId = decodeOpaqueId(buyerId).id;
+
+      let rates = await ProductRate.findOne({ productType: "Resale" });
+      let buyerFee = 0;
+      let sellerFee = 0;
+      if (rates?.buyerFee) {
+        buyerFee = (rates.buyerFee / 100) * price;
+      }
+      if (rates?.sellerFee) {
+        buyerFee = (rates.sellerFee / 100) * price;
+      }
       await verifyOwnership(
         collections,
         decodeOpaqueId(sellerId).id,
@@ -613,17 +667,23 @@ export default {
             ownerId: decodeOpaqueId(sellerId).id,
             productId: decodeOpaqueId(productId).id,
           },
-          { $inc: { unitsEscrow: -units } }
+          { $inc: { amount: -units } }
         );
-
+        const netBuyerPrice = price + buyerFee;
+        const netSellerPrice = price - sellerFee;
+        const netServiceCharge = buyerFee + sellerFee;
         await Promise.all([
-          updateWallet(collections, decodedBuyerId, -price),
+          updateWallet(collections, decodedBuyerId, -netBuyerPrice),
 
-          updateWallet(collections, decodeOpaqueId(sellerId).id, price),
+          updateWallet(
+            collections,
+            decodeOpaqueId(sellerId).id,
+            netSellerPrice
+          ),
           updateWallet(
             collections,
             decodeOpaqueId("640f0192a9967d6d705c9e74").id,
-            serviceCharge
+            netServiceCharge
           ),
           updateTradeUnits(collections, decodedTradeId, -units),
           closeTrade(collections, decodedTradeId),
@@ -632,6 +692,44 @@ export default {
       }
 
       return false;
+    } catch (err) {
+      return err;
+    }
+  },
+  async voteProperty(parent, args, context, info) {
+    try {
+      let { authToken, userId, collections } = context;
+      let { Votes, Catalog } = collections;
+      let { productId, voteType } = args.input;
+
+      if (!authToken || !userId) return new Error("Unauthorized");
+      let decodedProductId = decodeOpaqueId(productId).id;
+      const { propertySaleType } = await Catalog.findOne({
+        "product._id": decodedProductId,
+      });
+
+      if (propertySaleType?.type !== "Premarket")
+        return new Error("Property is not in the pre-market stage");
+
+      const filter = {
+        userId,
+        productId: decodedProductId,
+      };
+      const update = {
+        $set: { voteType },
+        $setOnInsert: {
+          productId: decodedProductId,
+          userId,
+        },
+      };
+      const options = { upsert: true, returnOriginal: false };
+      const { lastErrorObject } = await Votes.findOneAndUpdate(
+        filter,
+        update,
+        options
+      );
+
+      return lastErrorObject?.n > 0;
     } catch (err) {
       return err;
     }
