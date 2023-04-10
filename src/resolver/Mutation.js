@@ -12,6 +12,7 @@ import updateTradeUnits from "../util/updateTradeUnits.js";
 import updateOwnership from "../util/updateOwnership.js";
 import closeTrade from "../util/closeTrade.js";
 import sendTradeCreationEmail from "../util/sendTradeCreationEmail.js";
+import validateUser from "../util/validateUser.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -45,6 +46,7 @@ export default {
       let decodedProductId = decodeOpaqueId(productId).id;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+      await validateUser(context, userId);
 
       let checkOwnerExist = await Ownership.findOne({
         ownerId: decodeOpaqueId(userId).id,
@@ -91,6 +93,7 @@ export default {
         productId: decodedId,
         approvalStatus: "pending",
         tradeStatus: "inProgress",
+        isDisabled: false,
         createdBy: decodeOpaqueId(createdBy).id,
       };
 
@@ -130,6 +133,7 @@ export default {
       } = args.input;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+      await validateUser(context, userId);
 
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
@@ -281,6 +285,7 @@ export default {
         collections;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+      await validateUser(context, userId);
 
       let ownerRes = await Ownership.findOne({
         ownerId: decodeOpaqueId(userId).id,
@@ -348,6 +353,7 @@ export default {
           approvalStatus: "pending",
           createdBy: decodeOpaqueId(createdBy).id,
           completionStatus: "inProgress",
+          isDisabled: false,
         };
       }
       if (tradeType === "bid") {
@@ -522,6 +528,7 @@ export default {
       } = args.input;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+      await validateUser(context, userId);
 
       const decodedBuyerId = decodeOpaqueId(buyerId).id;
       const decodedSellerId = decodeOpaqueId(sellerId).id;
@@ -622,6 +629,7 @@ export default {
       } = args.input;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+      await validateUser(context, userId);
       let decodedTradeId = decodeOpaqueId(tradeId).id;
       let decodedBuyerId = decodeOpaqueId(buyerId).id;
 
@@ -702,7 +710,7 @@ export default {
       let { Votes, Catalog } = collections;
       let { productId, voteType } = args.input;
 
-      if (!authToken || !userId) return new Error("Unauthorized");
+      if (!authToken || !userId) return null;
       let decodedProductId = decodeOpaqueId(productId).id;
       const { propertySaleType } = await Catalog.findOne({
         "product._id": decodedProductId,
@@ -730,6 +738,77 @@ export default {
       );
 
       return lastErrorObject?.n > 0;
+    } catch (err) {
+      return err;
+    }
+  },
+  async disableTrade(parent, { tradeId }, context, info) {
+    try {
+      const { authToken, userId, collections } = context;
+      const { Trades } = collections;
+      let decodedTradeId = decodeOpaqueId(tradeId).id;
+      const trade = Trades.updateOne(
+        {
+          _id: ObjectID.ObjectId(tradeId),
+          createdBy: userId,
+        },
+        { $set: { isDisabled: true } }
+      );
+    } catch (err) {
+      return err;
+    }
+  },
+  async cancelTrade(parent, { tradeId }, context, info) {
+    try {
+      const { authToken, userId, collections } = context;
+      const { Trades } = collections;
+      const { result } = Trades.updateOne(
+        {
+          _id: ObjectID.ObjectId(tradeId),
+          createdBy: userId,
+        },
+        { $set: { isCancelled: true } }
+      );
+      return result?.n > 0;
+    } catch (err) {
+      return err;
+    }
+  },
+  async editTrade(parent, args, context, info) {
+    try {
+      const { authToken, userId, collections } = context;
+      const { Trades } = collections;
+
+      const {
+        productId,
+        price,
+        area,
+        buyerId,
+        sellerId,
+        expirationTime,
+        tradeType,
+        minQty,
+        createdBy,
+        currencyUnit,
+        cancellationReason,
+      } = args.input;
+
+      console.log("args are ", args);
+
+      console.log("args input ", args.input);
+
+      let decodedTradeId = decodeOpaqueId(args.tradeId).id;
+
+      let { result } = await Trades.updateOne(
+        {
+          _id: ObjectID.ObjectId(decodedTradeId),
+          createdBy: userId,
+        },
+        { $set: { price, area, minQty, expirationTime } }
+      );
+      // console.log("result is ", result);
+
+      return result?.n > 0;
     } catch (err) {
       return err;
     }

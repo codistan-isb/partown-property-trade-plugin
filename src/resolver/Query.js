@@ -42,10 +42,12 @@ export default {
           completionStatus: {
             $ne: "completed",
           },
+          isDisabled: false,
         }).toArray();
       } else {
         tradeResults = await Trades.find({
           productId: decodedId,
+          isDisabled: false,
           createdBy: {
             $ne: userId,
           },
@@ -66,14 +68,20 @@ export default {
       let { authToken, userId, collections } = context;
       let { Ownership } = collections;
       let { productId, ownerId } = args;
+
+      if (!authToken || !userId) return new Error("Unauthorized");
+
       let data = {
         productId: decodeOpaqueId(productId).id,
-        ownerId: decodeOpaqueId(ownerId).id,
+        ownerId: userId,
       };
-      if (!authToken || !userId) return new Error("Unauthorized");
+
+      console.log("**************Data is****************", data);
       const owner = await Ownership.findOne(data);
-      if (!owner) return new Error("Owner not found");
+
       console.log("owner is ", owner);
+      if (!owner) return new Error("Owner not found");
+
       return owner;
     } catch (err) {
       return err;
@@ -106,6 +114,7 @@ export default {
 
       let allTrades = Trades.find({
         createdBy: userId,
+        isDisabled: { $ne: true },
         ...matchStage,
       }).toArray();
 

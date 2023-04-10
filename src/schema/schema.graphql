@@ -163,13 +163,16 @@ extend type Mutation {
   sellUnits(input: sellPropertyInput): Boolean
   updateOwnerShip(ownerId: String!, productId: String!, units: Float!): Boolean
   voteProperty(input: voteInput!): Boolean
+  disableTrade(tradeId: ID!): Boolean
+  cancelTrade(tradeId: ID!): Boolean
+  editTrade(input: tradeInput, tradeId: ID!): Boolean
 }
 
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
   myTrades(filter: completionStatusEnum): [trade]
-  getUnitOwnership(productId: String!, ownerId: String!): UnitOwnership
+  getUnitOwnership(productId: String!): UnitOwnership
   getUserProperties: [UnitOwnership]
   remainingQuantity(productId: String!): Float
   propertyVotes(productId: String!): voteOutput
