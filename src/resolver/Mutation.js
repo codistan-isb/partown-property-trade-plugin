@@ -36,11 +36,11 @@ export default {
         collections;
 
       if (!authToken || !userId) return new Error("Unauthorized");
-      // let res = await sendTradeCreationEmail(
-      //   context,
-      //   "accounts/verifyEmail",
-      //   userId
-      // );
+      let res = await sendTradeCreationEmail(
+        context,
+        "accounts/verifyEmail",
+        userId
+      );
 
       let decodedSellerId = decodeOpaqueId(sellerId).id;
       let decodedProductId = decodeOpaqueId(productId).id;

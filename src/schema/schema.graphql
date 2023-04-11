@@ -171,7 +171,7 @@ extend type Mutation {
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
-  myTrades(filter: completionStatusEnum): [trade]
+  myTrades(filter: completionStatusEnum, searchQuery: String): [trade]
   getUnitOwnership(productId: String!): UnitOwnership
   getUserProperties: [UnitOwnership]
   remainingQuantity(productId: String!): Float

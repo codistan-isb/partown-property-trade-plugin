@@ -76,7 +76,6 @@ export default {
         ownerId: userId,
       };
 
-      console.log("**************Data is****************", data);
       const owner = await Ownership.findOne(data);
 
       console.log("owner is ", owner);
@@ -101,28 +100,40 @@ export default {
       return err;
     }
   },
-  async myTrades(parent, { filter }, context, info) {
+  async myTrades(parent, { filter, searchQuery }, context, info) {
     try {
       let { authToken, userId, collections } = context;
       let { Trades } = collections;
 
       if (!authToken || !userId) return new Error("Unauthorized");
-      let matchStage = {};
-      if (filter === "completed") {
-        matchStage = { completionStatus: "completed" };
-      }
 
-      let allTrades = Trades.find({
+      let matchStage = {
         createdBy: userId,
         isDisabled: { $ne: true },
-        ...matchStage,
-      }).toArray();
+      };
+
+      if (filter === "completed") {
+        matchStage.completionStatus = "completed";
+      }
+
+      if (searchQuery) {
+        matchStage.productId = {
+          $in: await collections.Catalog.distinct("product._id", {
+            "product.title": { $regex: searchQuery, $options: "i" },
+          }),
+        };
+      }
+
+      let allTrades = await Trades.aggregate([
+        { $match: matchStage },
+      ]).toArray();
 
       return allTrades;
     } catch (err) {
       return err;
     }
   },
+
   async remainingQuantity(parent, { productId }, context, info) {
     try {
       let { collections, userId, authToken } = context;
