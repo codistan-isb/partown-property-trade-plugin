@@ -483,6 +483,9 @@ export default {
         "product._id": id,
       });
 
+      // console.log("product is ", product)
+      console.log("product sale type ", propertySaleType);
+
       // let totalValue = product?.area?.value;
       let remainingValue = product?.area?.availableQuantity;
 

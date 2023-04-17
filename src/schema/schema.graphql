@@ -210,11 +210,11 @@ extend type Query {
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
   myTrades(filter: completionStatusEnum, searchQuery: String): [trade]
   getUnitOwnership(productId: String!): UnitOwnership
-  getUserProperties: [UnitOwnership]
+  getUserProperties(accountId: ID): [UnitOwnership]
   remainingQuantity(productId: String!): Float
   propertyVotes(productId: String!): voteOutput
 }
 
 extend type Subscription {
-  notifications(userId: ID!): Notification
+  notifications(accountId: ID!): Notification
 }

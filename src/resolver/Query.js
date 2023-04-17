@@ -86,14 +86,20 @@ export default {
       return err;
     }
   },
-  async getUserProperties(parent, args, context, info) {
+  async getUserProperties(parent, { accountId }, context, info) {
     try {
       let { authToken, userId, collections } = context;
       let { Ownership } = collections;
       if (!authToken || !userId) return new Error("Unauthorized");
 
+      let idToUse = userId;
+
+      if (accountId) {
+        idToUse = accountId;
+      }
+
       let ownerProperties = Ownership.find({
-        ownerId: decodeOpaqueId(userId).id,
+        ownerId: decodeOpaqueId(idToUse).id,
       }).toArray();
       return ownerProperties;
     } catch (err) {
