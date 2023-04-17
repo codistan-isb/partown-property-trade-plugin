@@ -5,6 +5,8 @@ import Mutation from "./resolver/Mutation.js";
 import Query from "./resolver/Query.js";
 import UnitOwnership from "./resolver/UnitOwnership.js";
 import trade from "./resolver/trade.js";
+import Subscription from "./resolver/Subscription.js";
+import mutations from "./mutations/index.js";
 
 const schemas = importAsString("./schema/schema.graphql");
 const require = createRequire(import.meta.url);
@@ -22,6 +24,7 @@ const resolvers = {
   Mutation,
   Query,
   trade,
+  Subscription,
 };
 export default async function register(app) {
   await app.registerPlugin({
@@ -49,5 +52,6 @@ export default async function register(app) {
       schemas: [schemas],
       resolvers,
     },
+    mutations,
   });
 }

@@ -13,6 +13,9 @@ import updateOwnership from "../util/updateOwnership.js";
 import closeTrade from "../util/closeTrade.js";
 import sendTradeCreationEmail from "../util/sendTradeCreationEmail.js";
 import validateUser from "../util/validateUser.js";
+import createTradeTransaction from "../util/createTradeTransaction.js";
+import createNotification from "../util/createNotification.js";
+import markAsRead from "../util/markAsRead.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -135,6 +138,12 @@ export default {
       if (!authToken || !userId) return new Error("Unauthorized");
       await validateUser(context, userId);
 
+      let userAccount = await Accounts.findOne({ userId });
+
+      let userTransactionId = userAccount?.profile?.transactionId
+        ? userAccount?.profile?.transactionId
+        : "n/a";
+
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
       const allOwners = await Ownership.find({
@@ -144,14 +153,14 @@ export default {
       // const totalPrice = units * price;
       //1% service charge
       let rates = await ProductRate.findOne({ productType: "Primary" });
-      console.log("rates are ", rates);
+      // console.log("rates are ", rates);
       let buyerFee = 0;
       let sellerFee = 0;
       if (rates?.buyerFee) {
         buyerFee = (rates.buyerFee / 100) * price;
       }
       if (rates?.sellerFee) {
-        buyerFee = (rates.sellerFee / 100) * price;
+        sellerFee = (rates.sellerFee / 100) * price;
       }
 
       await checkUserWallet(
@@ -181,7 +190,7 @@ export default {
 
       let totalSum = sum[0]?.totalUnits;
 
-      console.log("total sum is ", totalSum);
+      // console.log("total sum is ", totalSum);
 
       if (totalSum === product?.area?.value) {
         console.log("product?.area?.value", product?.area?.value);
@@ -256,6 +265,23 @@ export default {
         // await updateAvailableQuantity(collections, decodedProductId, -units);
         await updateTradeUnits(collections, decodedTradeId, -units, minQty);
         await closeTrade(collections, decodedTradeId);
+        // userTransactionId
+        await createTradeTransaction(context, {
+          amount: netBuyerPrice,
+          approvalStatus: "completed",
+          transactionBy: userId,
+          transactionId: userTransactionId,
+          tradeTransactionType: "buy",
+          unitsQuantity: units,
+          serviceCharges: {
+            buyer: buyerFee,
+            seller: sellerFee,
+            total: netServiceCharge,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
         return result?.n > 0;
       }
 
@@ -414,7 +440,7 @@ export default {
         );
 
       const { product, propertySaleType } = await Catalog.findOne({
-        "product._id": decodeOpaqueId(productId).id,
+        "product._id": id,
       });
       let totalValue = product?.area?.value;
       console.log("property sale type is ", propertySaleType);
@@ -514,7 +540,7 @@ export default {
   async purchaseUnits(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Ownership, ProductRate } = collections;
+      const { Ownership, ProductRate, Accounts } = collections;
       const {
         sellerId,
         productId,
@@ -542,7 +568,7 @@ export default {
         buyerFee = (rates.buyerFee / 100) * price;
       }
       if (rates?.sellerFee) {
-        buyerFee = (rates.sellerFee / 100) * price;
+        sellerFee = (rates.sellerFee / 100) * price;
       }
       await checkUserWallet(collections, decodedBuyerId, price + buyerFee);
       await validateMinQty(collections, decodedTradeId, units);
@@ -592,6 +618,12 @@ export default {
         const netSellerPrice = price - sellerFee;
         const netServiceCharge = buyerFee + sellerFee;
 
+        let userAccount = await Accounts.findOne({ userId });
+
+        let userTransactionId = userAccount?.profile?.transactionId
+          ? userAccount?.profile?.transactionId
+          : "n/a";
+
         // Update buyer, seller, and platform wallets
         await Promise.all([
           updateWallet(collections, decodedBuyerId, -netBuyerPrice),
@@ -605,6 +637,22 @@ export default {
           updateTradeUnits(collections, decodedTradeId, -units, minQty),
         ]);
         await closeTrade(collections, decodedTradeId);
+        await createTradeTransaction(context, {
+          amount: netBuyerPrice,
+          approvalStatus: "completed",
+          transactionBy: userId,
+          transactionId: userTransactionId,
+          tradeTransactionType: "buy",
+          unitsQuantity: units,
+          serviceCharges: {
+            buyer: buyerFee,
+            seller: sellerFee,
+            total: netServiceCharge,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
         return result?.n > 0;
       }
 
@@ -616,7 +664,7 @@ export default {
   async sellUnits(parent, args, context, info) {
     try {
       let { authToken, userId, collections } = context;
-      let { Ownership, ProductRate } = collections;
+      let { Ownership, ProductRate, Accounts } = collections;
       let {
         sellerId,
         productId,
@@ -640,7 +688,7 @@ export default {
         buyerFee = (rates.buyerFee / 100) * price;
       }
       if (rates?.sellerFee) {
-        buyerFee = (rates.sellerFee / 100) * price;
+        sellerFee = (rates.sellerFee / 100) * price;
       }
       await verifyOwnership(
         collections,
@@ -661,6 +709,13 @@ export default {
           ownerId: decodeOpaqueId(buyerId).id,
         },
       };
+
+      let userAccount = await Accounts.findOne({ userId });
+
+      let userTransactionId = userAccount?.profile?.transactionId
+        ? userAccount?.profile?.transactionId
+        : "n/a";
+
       const options = { upsert: true, returnOriginal: false };
       //update buyer ownership
       const { lastErrorObject } = await Ownership.findOneAndUpdate(
@@ -695,6 +750,22 @@ export default {
           ),
           updateTradeUnits(collections, decodedTradeId, -units),
           closeTrade(collections, decodedTradeId),
+
+          await createTradeTransaction(context, {
+            amount: netBuyerPrice,
+            approvalStatus: "completed",
+            transactionBy: userId,
+            transactionId: userTransactionId,
+            tradeTransactionType: "sell",
+            unitsQuantity: units,
+            serviceCharges: {
+              buyer: buyerFee,
+              seller: sellerFee,
+              total: netServiceCharge,
+            },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
         ]);
         return result?.n > 0;
       }
@@ -812,5 +883,17 @@ export default {
     } catch (err) {
       return err;
     }
+  },
+  async createNotification(parent, args, context, info) {
+    let result = await context.mutations.createNotification(
+      context,
+      args.input
+    );
+    return result;
+  },
+  async markAsRead(parent, args, context, info) {
+    console.log("markAsRead", args);
+    let mkr = await markAsRead(context, args);
+    return mkr;
   },
 };

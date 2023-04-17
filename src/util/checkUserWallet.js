@@ -10,7 +10,7 @@ export default async function checkUserWallet(
   if (wallets === undefined || wallets?.amount < amountToCheck)
     throw new Error(
       `Insufficient Funds, Please add funds to your wallet, you need an additional ₦${
-        amountToCheck - wallets?.amount
+        amountToCheck - (wallets?.amount ? wallets?.amount : 0)
       }`
     );
 }

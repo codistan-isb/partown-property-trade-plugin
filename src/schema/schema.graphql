@@ -153,6 +153,39 @@ type voteOutput {
   downVotesCount: Int
 }
 
+enum notificationTypes {
+  banUser
+}
+
+enum notificationStatus {
+  unread
+  read
+}
+
+# notifications
+type Notification {
+  _id: ID
+  title: String
+  details: String
+  hasDetails: Boolean
+  message: String
+  status: notificationStatus
+  timeSent: DateTime
+  to: ID!
+  from: ID
+  sender: Account
+  type: notificationTypes
+  url: String
+}
+
+input createNotificationInput {
+  details: String
+  hasDetails: Boolean!
+  message: String!
+  to: ID!
+  type: notificationTypes!
+}
+
 extend type Mutation {
   makePrimaryOwner(ownerId: String!, productId: String!): Boolean
   makeResaleOwner(ownerId: String!, productId: String!, units: Float!): Boolean
@@ -166,6 +199,10 @@ extend type Mutation {
   disableTrade(tradeId: ID!): Boolean
   cancelTrade(tradeId: ID!): Boolean
   editTrade(input: tradeInput, tradeId: ID!): Boolean
+
+  # notifications
+  createNotification(input: createNotificationInput): Notification
+  markAsRead(notificationId: ID): Notification
 }
 
 extend type Query {
@@ -176,4 +213,8 @@ extend type Query {
   getUserProperties: [UnitOwnership]
   remainingQuantity(productId: String!): Float
   propertyVotes(productId: String!): voteOutput
+}
+
+extend type Subscription {
+  notifications(userId: ID!): Notification
 }
