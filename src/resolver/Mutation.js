@@ -256,7 +256,7 @@ export default {
         //update admin/platform funds
         await updateWallet(
           collections,
-          decodeOpaqueId("640f0192a9967d6d705c9e74").id,
+          decodeOpaqueId(process.env.ADMIN_ID).id,
           netServiceCharge
         );
 
@@ -649,7 +649,7 @@ export default {
           updateWallet(collections, decodedSellerId, netSellerPrice),
           updateWallet(
             collections,
-            decodeOpaqueId("640f0192a9967d6d705c9e74").id,
+            decodeOpaqueId(process.env.ADMIN_ID).id,
             netServiceCharge
           ),
           updateTradeUnits(collections, decodedTradeId, -units, minQty),
@@ -763,7 +763,7 @@ export default {
           ),
           updateWallet(
             collections,
-            decodeOpaqueId("640f0192a9967d6d705c9e74").id,
+            decodeOpaqueId(process.env.ADMIN_ID).id,
             netServiceCharge
           ),
           updateTradeUnits(collections, decodedTradeId, -units),
