@@ -1,21 +1,19 @@
 import ObjectID from "mongodb";
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
 import validateMinQty from "../util/validateMinQty.js";
-import selfSubscriptionCheck from "../util/selfSubscriptionCheck.js";
 import checkUserWallet from "../util/checkUserWallet.js";
 import updateWallet from "../util/updateWallet.js";
-import updateSellerWallet from "../util/updateSellerWallet.js";
-import updatePlatformWallet from "../util/updatePlatformWallet.js";
 import verifyOwnership from "../util/verifyOwnership.js";
 import updateAvailableQuantity from "../util/updateAvailableQuantity.js";
 import updateTradeUnits from "../util/updateTradeUnits.js";
 import updateOwnership from "../util/updateOwnership.js";
 import closeTrade from "../util/closeTrade.js";
-import sendTradeCreationEmail from "../util/sendTradeCreationEmail.js";
 import validateUser from "../util/validateUser.js";
 import createTradeTransaction from "../util/createTradeTransaction.js";
-import createNotification from "../util/createNotification.js";
+// import createNotification from "../util/createNotification.js";
 import markAsRead from "../util/markAsRead.js";
+import sendEmailOrPhoneNotification from "../util/sendEmailOrPhoneNotification.js";
+import buyerNotification from "../util/buyerNotification.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -39,11 +37,11 @@ export default {
         collections;
 
       if (!authToken || !userId) return new Error("Unauthorized");
-      let res = await sendTradeCreationEmail(
-        context,
-        "accounts/verifyEmail",
-        userId
-      );
+      // await sendEmailOrPhoneNotification(
+      //   context,
+      //   "accounts/verifyEmail",
+      //   userId
+      // );
 
       let decodedSellerId = decodeOpaqueId(sellerId).id;
       let decodedProductId = decodeOpaqueId(productId).id;
@@ -281,6 +279,23 @@ export default {
           createdAt: new Date(),
           updatedAt: new Date(),
         });
+
+        await buyerNotification(
+          context,
+          userId,
+          product?.title,
+          units,
+          "You",
+          userAccount?.profile?.picture
+        );
+        await buyerNotification(
+          context,
+          decodeOpaqueId(sellerId).id,
+          product?.title,
+          units,
+          `${userAccount?.profile?.firstName} ${userAccount?.profile?.lastName}`,
+          userAccount?.profile?.picture
+        );
 
         return result?.n > 0;
       }

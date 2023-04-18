@@ -1,20 +1,15 @@
 import _ from "lodash";
 import ReactionError from "@reactioncommerce/reaction-error";
 
-export default async function sendTradeCreationEmail(
-  context,
-  bodyTemplate = "accounts/verifyEmail",
-  userId
-) {
+export default async function sendEmailOrPhoneNotification(context, userId) {
   const {
     collections: { Accounts, Shops },
     mutations: { startIdentityEmailVerification },
   } = context;
 
-  //   const { email, token } = await startIdentityEmailVerification(context, {
-  //     userId,
-  //   });
+  const bodyTemplate = "trades/created";
 
+  
   const account = await Accounts.findOne({ userId });
 
   console.log("account is ", account);
