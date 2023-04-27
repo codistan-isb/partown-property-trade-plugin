@@ -35,6 +35,8 @@ type trade implements Node {
   createdByInfo: Account
   isDisabled: Boolean
   completionStatus: completionStatusEnum
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input tradeInput {

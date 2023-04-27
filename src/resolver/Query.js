@@ -28,8 +28,9 @@ export default {
       if (!authToken || !userId) {
         throw new Error("Unauthorized");
       }
+
+      console.log("user id is", userId);
       let decodedId = decodeOpaqueId(productId).id;
-      console.log("user id", userId);
 
       let tradeResults = [];
       if (type) {
@@ -42,7 +43,7 @@ export default {
           completionStatus: {
             $ne: "completed",
           },
-          isDisabled: false,
+          isDisabled: { $ne: true },
         }).toArray();
       } else {
         tradeResults = await Trades.find({
@@ -54,6 +55,7 @@ export default {
           completionStatus: {
             $ne: "completed",
           },
+          isDisabled: { $ne: true },
         }).toArray();
       }
 
@@ -116,6 +118,7 @@ export default {
       let matchStage = {
         createdBy: userId,
         isDisabled: { $ne: true },
+        isCancelled: { $ne: true },
       };
 
       if (filter === "completed") {

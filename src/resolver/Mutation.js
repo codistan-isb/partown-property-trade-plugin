@@ -276,6 +276,8 @@ export default {
             seller: sellerFee,
             total: netServiceCharge,
           },
+          tradeBy: decodeOpaqueId(sellerId).id,
+          productId: decodedProductId,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
@@ -381,6 +383,7 @@ export default {
         );
       }
       let data = {};
+      let createdAt = new Date();
       if (tradeType === "offer") {
         data = {
           sellerId: decodeOpaqueId(sellerId).id,
@@ -395,6 +398,8 @@ export default {
           createdBy: decodeOpaqueId(createdBy).id,
           completionStatus: "inProgress",
           isDisabled: false,
+          createdAt,
+          updatedAt: createdAt,
         };
       }
       if (tradeType === "bid") {
@@ -409,6 +414,9 @@ export default {
           approvalStatus: "pending",
           createdBy: decodeOpaqueId(createdBy).id,
           completionStatus: "inProgress",
+          isDisabled: false,
+          createdAt,
+          updatedAt: createdAt,
         };
       }
       if (product?._id) {
@@ -667,6 +675,8 @@ export default {
             seller: sellerFee,
             total: netServiceCharge,
           },
+          tradeBy: decodeOpaqueId(sellerId).id,
+          productId: decodedProductId,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
@@ -781,6 +791,8 @@ export default {
               seller: sellerFee,
               total: netServiceCharge,
             },
+            tradeBy: decodeOpaqueId(buyerId).id,
+            productId: decodeOpaqueId(productId).id,
             createdAt: new Date(),
             updatedAt: new Date(),
           }),
@@ -851,7 +863,8 @@ export default {
     try {
       const { authToken, userId, collections } = context;
       const { Trades } = collections;
-      const { result } = Trades.updateOne(
+
+      const { result } = await Trades.updateOne(
         {
           _id: ObjectID.ObjectId(tradeId),
           createdBy: userId,
