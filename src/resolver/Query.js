@@ -1,4 +1,6 @@
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
+import getPaginatedResponse from "@reactioncommerce/api-utils/graphql/getPaginatedResponse.js";
+import wasFieldRequested from "@reactioncommerce/api-utils/graphql/wasFieldRequested.js";
 export default {
   async getTrades(parent, args, context, info) {
     try {
@@ -88,7 +90,12 @@ export default {
       return err;
     }
   },
-  async getUserProperties(parent, { accountId }, context, info) {
+  async getUserProperties(
+    parent,
+    { accountId, searchQuery, ...connectionArgs },
+    context,
+    info
+  ) {
     try {
       let { authToken, userId, collections } = context;
       let { Ownership } = collections;
@@ -100,10 +107,28 @@ export default {
         idToUse = accountId;
       }
 
-      let ownerProperties = Ownership.find({
+      let filter = {
         ownerId: decodeOpaqueId(idToUse).id,
-      }).toArray();
-      return ownerProperties;
+      };
+
+      if (searchQuery) {
+        filter.productId = {
+          $in: await collections.Catalog.distinct("product._id", {
+            "product.title": { $regex: searchQuery, $options: "i" },
+          }),
+        };
+      }
+
+      let ownerProperties = Ownership.find(filter);
+
+      return getPaginatedResponse(ownerProperties, connectionArgs, {
+        includeHasNextPage: wasFieldRequested("pageInfo.hasNextPage", info),
+        includeHasPreviousPage: wasFieldRequested(
+          "pageInfo.hasPreviousPage",
+          info
+        ),
+        includeTotalCount: wasFieldRequested("totalCount", info),
+      });
     } catch (err) {
       return err;
     }

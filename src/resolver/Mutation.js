@@ -324,8 +324,15 @@ export default {
       } = args.input;
 
       let { auth, authToken, userId, collections } = context;
-      let { Transactions, Accounts, Catalog, Products, Trades, Ownership } =
-        collections;
+      let {
+        Transactions,
+        Accounts,
+        Catalog,
+        Products,
+        Trades,
+        Ownership,
+        ProductRate,
+      } = collections;
 
       if (!authToken || !userId) return new Error("Unauthorized");
       await validateUser(context, userId);
@@ -334,6 +341,13 @@ export default {
         ownerId: decodeOpaqueId(userId).id,
         productId: decodeOpaqueId(productId).id,
       });
+
+      let rates = await ProductRate.findOne({ productType: "Resale" });
+      let buyerFee = 0;
+      let totalPriceForServiceCharge = price * area;
+      if (rates?.buyerFee) {
+        buyerFee = (rates.buyerFee / 100) * totalPriceForServiceCharge;
+      }
 
       if (tradeType === "offer" && !ownerRes)
         return new Error("You don't own this property");
@@ -351,10 +365,10 @@ export default {
       //   );
 
       //1% service charge
-      const serviceCharge = price / 100;
+      const totalAmount = price * area + buyerFee;
 
       if (tradeType === "bid") {
-        await checkUserWallet(collections, userId, price + serviceCharge);
+        await checkUserWallet(collections, userId, totalAmount);
       }
 
       let decodedId = decodeOpaqueId(productId).id;
@@ -419,6 +433,7 @@ export default {
           updatedAt: createdAt,
         };
       }
+
       if (product?._id) {
         const { insertedId } = await Trades.insertOne(data);
         if (insertedId) {
@@ -426,7 +441,10 @@ export default {
             await Accounts.updateOne(
               { _id: decodeOpaqueId(buyerId).id },
               {
-                $inc: { "wallets.amount": -price, "wallets.escrow": price },
+                $inc: {
+                  "wallets.amount": -totalAmount,
+                  "wallets.escrow": totalAmount,
+                },
               }
             );
           } else if (sellerId) {
@@ -862,8 +880,26 @@ export default {
   async cancelTrade(parent, { tradeId }, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Trades } = collections;
+      const { Trades, Ownership, Accounts } = collections;
 
+      if (!userId || !authToken) return new Error("Unauthorized");
+
+      const res = await Trades.findOne({ _id: ObjectID.ObjectId(tradeId) });
+
+      let tradeType = res?.tradeType;
+      let area = res?.area;
+      let price = res?.price;
+
+      let total = area * price;
+      let productId = res?.productId;
+
+      console.log("trade id is ", tradeId);
+      console.log("res is  ", res);
+      console.log("res?.tradeType", res?.tradeType);
+      console.log("userId check is", userId);
+
+      console.log("productId is ", productId);
+      // return null;
       const { result } = await Trades.updateOne(
         {
           _id: ObjectID.ObjectId(tradeId),
@@ -871,7 +907,31 @@ export default {
         },
         { $set: { isCancelled: true } }
       );
-      return result?.n > 0;
+
+      if (result?.n > 0) {
+        if (tradeType === "bid") {
+          await Ownership.updateOne(
+            {
+              ownerId: userId,
+              productId: decodeOpaqueId(productId).id,
+            },
+            { $inc: { unitsEscrow: -area } },
+            { $inc: { amount: area } }
+          );
+        } else if (tradeType === "offer") {
+          await Accounts.updateOne(
+            { _id: userId },
+            {
+              $inc: {
+                "wallets.escrow": -total,
+                "wallets.amount": total,
+              },
+            }
+          );
+        }
+      }
+
+      return true;
     } catch (err) {
       return err;
     }
@@ -895,11 +955,25 @@ export default {
         cancellationReason,
       } = args.input;
 
-      console.log("args are ", args);
+      if (!userId || !authToken) return new Error("Unauthorized");
+
+      console.log("incoming data", price, area, expirationTime, minQty);
 
       console.log("args input ", args.input);
 
+      console.log("args trade is ", args.tradeId);
+
       let decodedTradeId = decodeOpaqueId(args.tradeId).id;
+
+      let foundedTrade = await Trades.findOne(
+        {
+          _id: ObjectID.ObjectId(decodedTradeId),
+          createdBy: userId,
+        },
+        { $set: { price, area, minQty, expirationTime } }
+      );
+
+      console.log("founded trade is ", foundedTrade);
 
       let { result } = await Trades.updateOne(
         {
@@ -908,7 +982,6 @@ export default {
         },
         { $set: { price, area, minQty, expirationTime } }
       );
-      // console.log("result is ", result);
 
       return result?.n > 0;
     } catch (err) {
