@@ -133,11 +133,17 @@ export default {
       return err;
     }
   },
-  async myTrades(parent, { filter, searchQuery }, context, info) {
+  async myTrades(
+    parent,
+    { filter, searchQuery, ...connectionArgs },
+    context,
+    info
+  ) {
     try {
       let { authToken, userId, collections } = context;
       let { Trades } = collections;
 
+      console.log("user id is", userId);
       if (!authToken || !userId) return new Error("Unauthorized");
 
       let matchStage = {
@@ -158,11 +164,18 @@ export default {
         };
       }
 
-      let allTrades = await Trades.aggregate([
-        { $match: matchStage },
-      ]).toArray();
+      let allTrades = Trades.find(matchStage);
 
-      return allTrades;
+      console.log("my trades using match stage", allTrades);
+
+      return getPaginatedResponse(allTrades, connectionArgs, {
+        includeHasNextPage: wasFieldRequested("pageInfo.hasNextPage", info),
+        includeHasPreviousPage: wasFieldRequested(
+          "pageInfo.hasPreviousPage",
+          info
+        ),
+        includeTotalCount: wasFieldRequested("totalCount", info),
+      });
     } catch (err) {
       return err;
     }

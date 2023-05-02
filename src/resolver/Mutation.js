@@ -263,6 +263,7 @@ export default {
         // await updateAvailableQuantity(collections, decodedProductId, -units);
         await updateTradeUnits(collections, decodedTradeId, -units, minQty);
         await closeTrade(collections, decodedTradeId);
+        
         // userTransactionId
         await createTradeTransaction(context, {
           amount: netBuyerPrice,

@@ -30,8 +30,8 @@ export default async function buyerNotification(
   //   let firstName = _.get(account, "profile.firstName");
   //   let lastName = _.get(account, "profile.lastName");
   //   let buyerImage = _.get(account, "profile.picture");
-  
-  console.log("buyer image is ", buyerImage)
+
+  console.log("buyer image is ", buyerImage);
   const dataForEmail = {
     propertyTitle,
     buyerImage: await generateSignedUrl(buyerImage),
