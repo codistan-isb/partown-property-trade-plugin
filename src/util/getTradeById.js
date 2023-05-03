@@ -1,3 +1,4 @@
+import ObjectID from "mongodb";
 /**
  *
  * @method placeBidOnProduct
@@ -13,6 +14,6 @@
 export default async function getTradeById(context, tradeId) {
   const { collections } = context;
   const { Trades } = collections;
-  let tradeRes = await Trades.findOne({ _id: tradeId });
+  let tradeRes = await Trades.findOne({ _id: ObjectID.ObjectId(tradeId) });
   return tradeRes;
 }

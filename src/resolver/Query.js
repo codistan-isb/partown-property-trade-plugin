@@ -238,11 +238,10 @@ export default {
       }
 
       let percentage = (
-        (sum[0]?.totalUnits / sum[0]?.totalOriginal) *
+        (sum[0]?.totalUnits / product?.area?.value) *
         100
       ).toFixed(2);
 
-      console.log("percentage is ", percentage);
       return percentage;
     } catch (err) {
       console.log("resale property quantity query");
@@ -277,7 +276,6 @@ export default {
     try {
       const { authToken, userId, collections } = context;
       const { Notifications } = collections;
-      if (!authToken || !userId) return new Error("Unauthorized");
 
       console.log("user id ", userId);
       const { ...connectionArgs } = args;

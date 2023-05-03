@@ -11,6 +11,8 @@ export default {
     return owner;
   },
   async tradeInfo(parent, args, context, info) {
+
+        
     let trade = await getTradeById(context, parent.tradeId);
     return trade;
   },
