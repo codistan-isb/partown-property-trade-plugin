@@ -263,7 +263,7 @@ export default {
         // await updateAvailableQuantity(collections, decodedProductId, -units);
         await updateTradeUnits(collections, decodedTradeId, -units, minQty);
         await closeTrade(collections, decodedTradeId);
-        
+
         // userTransactionId
         await createTradeTransaction(context, {
           amount: netBuyerPrice,
@@ -1000,5 +1000,32 @@ export default {
     console.log("markAsRead", args);
     let mkr = await markAsRead(context, args);
     return mkr;
+  },
+  async clearNotification(parent, { notificationId }, context, info) {
+    try {
+      const { userId, authToken, collections } = context;
+      const { Notifications } = collections;
+      if (!userId || !authToken) return new Error("Unauthorized");
+
+      if (notificationId) {
+        const { result } = await Notifications.updateOne(
+          {
+            _id: notificationId,
+            to: userId,
+          },
+          { $set: { isCleared: true } }
+        );
+        return result?.n > 0;
+      } else if (!notificationId) {
+        const result = await Notifications.updateMany({
+          to: userId,
+        });
+
+        console.log("result is ", result);
+      }
+      return false;
+    } catch (err) {
+      return err;
+    }
   },
 };

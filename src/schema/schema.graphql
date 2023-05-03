@@ -215,27 +215,55 @@ enum notificationStatus {
 }
 
 # notifications
-type Notification {
-  _id: ID
+type Notification implements Node {
+  _id: ID!
   title: String
   details: String
   hasDetails: Boolean
   message: String
   status: notificationStatus
   timeSent: DateTime
-  to: ID!
+  # to: ID!
   from: ID
   sender: Account
   type: notificationTypes
   url: String
+  isCleared: Boolean
+  image: String
+}
+type NotificationEdge implements NodeEdge {
+  "The cursor that represents this node in the paginated results"
+  cursor: ConnectionCursor!
+
+  "The Transaction"
+  node: Notification
+}
+
+type NotificationConnection {
+  "The list of nodes that match the query, wrapped in an edge to provide a cursor string for each"
+  edges: [NotificationEdge]
+
+  """
+  You can request the `nodes` directly to avoid the extra wrapping that `NodeEdge` has,
+  if you know you will not need to paginate the results.
+  """
+  nodes: [Notification]
+
+  "Information to help a client request the next or previous page"
+  pageInfo: PageInfo!
+
+  "The total number of nodes that match your query"
+  totalCount: Int!
 }
 
 input createNotificationInput {
+  title: String
   details: String
   hasDetails: Boolean!
   message: String!
   to: ID!
   type: notificationTypes!
+  image: String
 }
 
 extend type Mutation {
@@ -251,6 +279,7 @@ extend type Mutation {
   disableTrade(tradeId: ID!): Boolean
   cancelTrade(tradeId: ID!): Boolean
   editTrade(input: tradeInput, tradeId: ID!): Boolean
+  clearNotification(notificationId: ID): Boolean
 
   # notifications
   createNotification(input: createNotificationInput): Notification
@@ -314,6 +343,29 @@ extend type Query {
 
   remainingQuantity(productId: String!): Float
   propertyVotes(productId: String!): voteOutput
+  userNotifications(
+    searchQuery: String
+    "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
+    after: ConnectionCursor
+
+    "Return only results that come before this cursor. Use this with `last` to specify the number of results to return."
+    before: ConnectionCursor
+
+    "Return at most this many results. This parameter may be used with either `after` or `offset` parameters."
+    first: ConnectionLimitInt
+
+    "Return at most this many results. This parameter may be used with the `before` parameter."
+    last: ConnectionLimitInt
+
+    "Return only results that come after the Nth result. This parameter may be used with the `first` parameter."
+    offset: Int
+
+    "Return results sorted in this order"
+    sortOrder: SortOrder = asc
+
+    "By default, groups are sorted by when they were created, oldest first. Set this to sort by one of the other allowed fields"
+    sortBy: AccountSortByField = createdAt
+  ): NotificationConnection!
 }
 
 extend type Subscription {

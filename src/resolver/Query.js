@@ -272,4 +272,31 @@ export default {
       return err;
     }
   },
+
+  async userNotifications(parent, args, context, info) {
+    try {
+      const { authToken, userId, collections } = context;
+      const { Notifications } = collections;
+      if (!authToken || !userId) return new Error("Unauthorized");
+
+      console.log("user id ", userId);
+      const { ...connectionArgs } = args;
+
+      let allNotifications = Notifications.find({
+        to: userId,
+        isCleared: { $ne: true },
+      });
+
+      return getPaginatedResponse(allNotifications, connectionArgs, {
+        includeHasNextPage: wasFieldRequested("pageInfo.hasNextPage", info),
+        includeHasPreviousPage: wasFieldRequested(
+          "pageInfo.hasPreviousPage",
+          info
+        ),
+        includeTotalCount: wasFieldRequested("totalCount", info),
+      });
+    } catch (err) {
+      return err;
+    }
+  },
 };
