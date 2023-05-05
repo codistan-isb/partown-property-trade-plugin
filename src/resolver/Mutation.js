@@ -219,7 +219,7 @@ export default {
             price: price,
             quantity: units,
             date: new Date(),
-            tradeType: "",
+            tradeType: "buy",
           },
         },
       };
@@ -754,6 +754,14 @@ export default {
           productId: decodeOpaqueId(productId).id,
           tradeId: decodeOpaqueId(tradeId).id,
           ownerId: decodeOpaqueId(buyerId).id,
+        },
+        $push: {
+          ownershipHistory: {
+            price: price,
+            quantity: units,
+            tradeType: "sell",
+            date: new Date(),
+          },
         },
       };
 

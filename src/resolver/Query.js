@@ -158,8 +158,8 @@ export default {
 
       if (searchQuery) {
         matchStage.productId = {
-          $in: await collections.Catalog.distinct("product._id", {
-            "product.title": { $regex: searchQuery, $options: "i" },
+          $in: await collections.Product.distinct("product._id", {
+            title: { $regex: searchQuery, $options: "i" },
           }),
         };
       }
