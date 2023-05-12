@@ -207,6 +207,7 @@ type voteOutput {
 
 enum notificationTypes {
   banUser
+  transaction
 }
 
 enum notificationStatus {
@@ -286,6 +287,20 @@ extend type Mutation {
   markAsRead(notificationId: ID): Notification
 }
 
+enum NotificationsSortByField {
+  "Notification  ID"
+  _id
+
+  "Date and time at which this account was created"
+  createdAt
+
+  "Date and time at which this account was last updated"
+  updatedAt
+
+  "Date time when the notification was sent"
+  timeSent
+}
+
 extend type Query {
   getTrades(input: tradeFiltersInput): [trade]
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
@@ -343,6 +358,7 @@ extend type Query {
 
   remainingQuantity(productId: String!): Float
   propertyVotes(productId: String!): voteOutput
+
   userNotifications(
     searchQuery: String
     "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
@@ -364,7 +380,7 @@ extend type Query {
     sortOrder: SortOrder = asc
 
     "By default, groups are sorted by when they were created, oldest first. Set this to sort by one of the other allowed fields"
-    sortBy: AccountSortByField = createdAt
+    sortBy: NotificationsSortByField = timeSent
   ): NotificationConnection!
 }
 

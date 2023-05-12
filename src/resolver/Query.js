@@ -21,7 +21,7 @@ export default {
     try {
       let { productId, type } = args;
       let { auth, authToken, userId, collections } = context;
-      let { Trades } = collections;
+      let { Trades, Catalog } = collections;
 
       if (!productId) {
         throw new Error("invalid product");
@@ -38,6 +38,11 @@ export default {
       if (type) {
         tradeResults = await Trades.find({
           productId: decodedId,
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.isVisible": { $ne: false },
+            }),
+          },
           tradeType: type,
           createdBy: {
             $ne: userId,
@@ -46,10 +51,16 @@ export default {
             $ne: "completed",
           },
           isDisabled: { $ne: true },
+          isCancelled: { $ne: true },
         }).toArray();
       } else {
         tradeResults = await Trades.find({
           productId: decodedId,
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.isVisible": { $ne: false },
+            }),
+          },
           isDisabled: false,
           createdBy: {
             $ne: userId,
@@ -58,6 +69,7 @@ export default {
             $ne: "completed",
           },
           isDisabled: { $ne: true },
+          isCancelled: { $ne: true },
         }).toArray();
       }
 
@@ -98,7 +110,7 @@ export default {
   ) {
     try {
       let { authToken, userId, collections } = context;
-      let { Ownership } = collections;
+      let { Ownership, Catalog } = collections;
       if (!authToken || !userId) return new Error("Unauthorized");
 
       let idToUse = userId;
@@ -118,6 +130,16 @@ export default {
           }),
         };
       }
+
+      console.log("catalog is ", Catalog);
+
+      filter.productId = {
+        $in: await Catalog.distinct("product._id", {
+          "product.isVisible": { $ne: false },
+        }),
+      };
+
+      console.log("filter is ", filter);
 
       let ownerProperties = Ownership.find(filter);
 
@@ -141,7 +163,7 @@ export default {
   ) {
     try {
       let { authToken, userId, collections } = context;
-      let { Trades } = collections;
+      let { Trades, Catalog } = collections;
 
       console.log("user id is", userId);
       if (!authToken || !userId) return new Error("Unauthorized");
@@ -152,8 +174,8 @@ export default {
         isCancelled: { $ne: true },
       };
 
-      if (filter === "completed") {
-        matchStage.completionStatus = "completed";
+      if (filter) {
+        matchStage.completionStatus = filter;
       }
 
       if (searchQuery) {
@@ -163,6 +185,12 @@ export default {
           }),
         };
       }
+
+      matchStage.productId = {
+        $in: await Catalog.distinct("product._id", {
+          "product.isVisible": { $ne: false },
+        }),
+      };
 
       let allTrades = Trades.find(matchStage);
 
@@ -192,12 +220,14 @@ export default {
         "product._id": decodedProductId,
       });
       let sum = [];
-      if (!userId || !userId) {
+      if (!userId) {
         sum = await Trades.aggregate([
           {
             $match: {
               productId: decodedProductId,
               tradeType: "offer",
+              completionStatus: { $ne: "completed" },
+              isCancelled: { $ne: true },
             },
           },
           {
@@ -219,6 +249,8 @@ export default {
           {
             $match: {
               sellerId: { $ne: userId },
+              completionStatus: { $ne: "completed" },
+              isCancelled: { $ne: true },
             },
           },
           {

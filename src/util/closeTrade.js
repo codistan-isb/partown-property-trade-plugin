@@ -13,7 +13,7 @@ import ObjectID from "mongodb";
  */
 export default async function closeTrade(collections, tradeId) {
   const { Trades } = collections;
-
+  const date = new Date();
   const { area } = await Trades.findOne({
     _id: ObjectID.ObjectId(tradeId),
   });
@@ -22,7 +22,7 @@ export default async function closeTrade(collections, tradeId) {
       {
         _id: ObjectID.ObjectId(tradeId),
       },
-      { $set: { completionStatus: "completed" } }
+      { $set: { completionStatus: "completed", updatedAt: date } }
     );
   }
 }

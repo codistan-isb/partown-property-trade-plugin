@@ -56,6 +56,11 @@ export default {
 
       if (!checkOwnerExist) return new Error("You don't own this property");
 
+      if (checkOwnerExist?.amount < area)
+        return new Error(
+          `You own ${checkOwnerExist?.amount} sqm for this property, you cannot sell more than that`
+        );
+
       let decodedId = decodeOpaqueId(productId).id;
 
       const { product } = await Catalog.findOne({
@@ -70,7 +75,11 @@ export default {
           "Minimum Quantity cannot be greater than the quantity specified"
         );
 
-      let primaryTradeCheck = await Trades.findOne({ productId: product?._id });
+      let primaryTradeCheck = await Trades.findOne({
+        productId: product?._id,
+        isCancelled: { $ne: true },
+        completionStatus: { $ne: "completed" },
+      });
 
       if (!!primaryTradeCheck?._id) {
         throw new Error("A trade already exist for this property");
@@ -93,7 +102,8 @@ export default {
         minQty,
         productId: decodedId,
         approvalStatus: "pending",
-        tradeStatus: "inProgress",
+        // tradeStatus: "inProgress",
+        completionStatus: "inProgress",
         isDisabled: false,
         createdBy: decodeOpaqueId(createdBy).id,
       };
@@ -310,7 +320,7 @@ export default {
   },
   async createTradeForProperty(parent, args, context, info) {
     try {
-      let {
+      const {
         productId,
         price,
         area,
@@ -320,12 +330,9 @@ export default {
         tradeType,
         minQty,
         createdBy,
-        currencyUnit,
-        cancellationReason,
       } = args.input;
-
-      let { auth, authToken, userId, collections } = context;
-      let {
+      const { auth, authToken, userId, collections } = context;
+      const {
         Transactions,
         Accounts,
         Catalog,
@@ -335,135 +342,108 @@ export default {
         ProductRate,
       } = collections;
 
-      if (!authToken || !userId) return new Error("Unauthorized");
+      if (!authToken || !userId) throw new Error("Unauthorized");
+
       await validateUser(context, userId);
 
-      let ownerRes = await Ownership.findOne({
-        ownerId: decodeOpaqueId(userId).id,
-        productId: decodeOpaqueId(productId).id,
+      const ownerId = decodeOpaqueId(userId).id;
+      const decodedProductId = decodeOpaqueId(productId).id;
+      const ownerRes = await Ownership.findOne({
+        ownerId: ownerId,
+        productId: decodedProductId,
       });
 
-      let rates = await ProductRate.findOne({ productType: "Resale" });
-      let buyerFee = 0;
-      let totalPriceForServiceCharge = price * area;
-      if (rates?.buyerFee) {
-        buyerFee = (rates.buyerFee / 100) * totalPriceForServiceCharge;
-      }
+      const rates = await ProductRate.findOne({ productType: "Resale" });
+      const buyerFee = rates?.buyerFee
+        ? (rates.buyerFee / 100) * price * area
+        : 0;
+      const totalAmount = price * area + buyerFee;
 
       if (tradeType === "offer" && !ownerRes)
-        return new Error("You don't own this property");
+        throw new Error("You don't own this property");
 
       if (minQty > area)
-        return new Error(
+        throw new Error(
           "Minimum Quantity cannot be greater than the quantity specified"
         );
-      if (ownerRes?.amount < area) {
-        return new Error(`You cannot sell more than ${ownerRes?.amount} units`);
-      }
-      // if (!units && tradeType === "bid")
-      //   return new Error(
-      //     "You are not allowed to create bid-offer for this property"
-      //   );
 
-      //1% service charge
-      const totalAmount = price * area + buyerFee;
+      if (tradeType === "offer" && ownerRes?.amount < area) {
+        throw new Error(`You cannot sell more than ${ownerRes?.amount} units`);
+      }
 
       if (tradeType === "bid") {
         await checkUserWallet(collections, userId, totalAmount);
       }
 
-      let decodedId = decodeOpaqueId(productId).id;
       const { product } = await Catalog.findOne({
-        "product._id": decodedId,
+        "product._id": decodedProductId,
       });
 
       if (!product) {
         throw new Error("Property not found");
       }
 
-      // console.log("product is ", product);
-      // console.log("property sale type is ", product.propertySaleType.type);
-
-      let primaryTradeCheck = Trades.find({ productId: product?._id });
+      let primaryTradeCheck = await Trades.find({ productId: product?._id });
 
       if (primaryTradeCheck && product?.propertySaleType?.type === "Primary") {
         throw new Error("Cannot create multiple trades for primary property");
       }
 
-      let { value } = product.area;
-
-      if (value < area) {
+      if (product.area.value < area) {
         throw new Error(
           "The amount you specified is greater than the total available for this property"
         );
       }
-      let data = {};
-      let createdAt = new Date();
-      if (tradeType === "offer") {
-        data = {
-          sellerId: decodeOpaqueId(sellerId).id,
-          price,
-          area,
-          originalQuantity: area,
-          expirationTime,
-          tradeType,
-          minQty,
-          productId: decodedId,
-          approvalStatus: "pending",
-          createdBy: decodeOpaqueId(createdBy).id,
-          completionStatus: "inProgress",
-          isDisabled: false,
-          createdAt,
-          updatedAt: createdAt,
-        };
-      }
-      if (tradeType === "bid") {
-        data = {
-          buyerId: decodeOpaqueId(buyerId).id,
-          price,
-          area,
-          expirationTime,
-          tradeType,
-          minQty,
-          productId: decodedId,
-          approvalStatus: "pending",
-          createdBy: decodeOpaqueId(createdBy).id,
-          completionStatus: "inProgress",
-          isDisabled: false,
-          createdAt,
-          updatedAt: createdAt,
-        };
+
+      const createdAt = new Date();
+      const data = {
+        ...(tradeType === "offer"
+          ? { sellerId: ownerId }
+          : { buyerId: ownerId }),
+        price,
+        area,
+        originalQuantity: area,
+        expirationTime,
+        tradeType,
+        minQty,
+        productId: decodedProductId,
+        approvalStatus: "pending",
+        createdBy: decodeOpaqueId(createdBy).id,
+        completionStatus: "inProgress",
+        isDisabled: false,
+        createdAt,
+        updatedAt: createdAt,
+      };
+
+      const { insertedId } = await Trades.insertOne(data);
+
+      if (!insertedId) throw new Error("Error creating Trade");
+
+      if (buyerId) {
+        await Accounts.updateOne(
+          { _id: decodeOpaqueId(buyerId).id },
+          {
+            $inc: {
+              "wallets.amount": -1 * totalAmount,
+              "wallets.escrow": totalAmount,
+            },
+          }
+        );
+      } else if (sellerId) {
+        await updateOwnership(
+          collections,
+          decodeOpaqueId(sellerId).id,
+          decodedProductId,
+          area
+        );
       }
 
-      if (product?._id) {
-        const { insertedId } = await Trades.insertOne(data);
-        if (insertedId) {
-          if (buyerId) {
-            await Accounts.updateOne(
-              { _id: decodeOpaqueId(buyerId).id },
-              {
-                $inc: {
-                  "wallets.amount": -totalAmount,
-                  "wallets.escrow": totalAmount,
-                },
-              }
-            );
-          } else if (sellerId) {
-            await updateOwnership(
-              collections,
-              decodeOpaqueId(sellerId).id,
-              decodeOpaqueId(productId).id,
-              area
-            );
-          }
-          return { _id: insertedId };
-        }
-        throw new Error("Error creating Trade");
-      }
+      return { _id: insertedId };
     } catch (err) {
-      return err;
+      throw err;
     }
   },
+
   async makePrimaryOwner(parent, args, context, info) {
     try {
       let { collections } = context;
@@ -791,7 +771,14 @@ export default {
         const netSellerPrice = price - sellerFee;
         const netServiceCharge = buyerFee + sellerFee;
         await Promise.all([
-          updateWallet(collections, decodedBuyerId, -netBuyerPrice),
+          // updateWallet(collections, decodedBuyerId, -netBuyerPrice),
+
+          Accounts.updateOne(
+            { _id: decodedBuyerId },
+            {
+              $inc: { "wallets.escrow": -netBuyerPrice },
+            }
+          ),
 
           updateWallet(
             collections,
@@ -837,15 +824,20 @@ export default {
       let { authToken, userId, collections } = context;
       let { Votes, Catalog } = collections;
       let { productId, voteType } = args.input;
-
+      let currentTime = new Date();
       if (!authToken || !userId) return null;
       let decodedProductId = decodeOpaqueId(productId).id;
-      const { propertySaleType } = await Catalog.findOne({
+      const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
 
-      if (propertySaleType?.type !== "Premarket")
+      console.log("product is ", product);
+
+      if (product?.propertySaleType?.type !== "Premarket")
         return new Error("Property is not in the pre-market stage");
+
+      if (product?.expiryTime < currentTime)
+        return new Error("Voting has ended for this property");
 
       const filter = {
         userId,
@@ -909,6 +901,7 @@ export default {
 
       console.log("productId is ", productId);
       // return null;
+
       const { result } = await Trades.updateOne(
         {
           _id: ObjectID.ObjectId(tradeId),
@@ -917,17 +910,20 @@ export default {
         { $set: { isCancelled: true } }
       );
 
+      console.log("result is", result);
+      console.log("trade type incoming is ", tradeType);
+      console.log("area is ", area);
+
       if (result?.n > 0) {
-        if (tradeType === "bid") {
+        if (tradeType === "offer") {
           await Ownership.updateOne(
             {
               ownerId: userId,
               productId: decodeOpaqueId(productId).id,
             },
-            { $inc: { unitsEscrow: -area } },
-            { $inc: { amount: area } }
+            { $inc: { unitsEscrow: -area, amount: area } }
           );
-        } else if (tradeType === "offer") {
+        } else if (tradeType === "bid") {
           await Accounts.updateOne(
             { _id: userId },
             {
@@ -948,7 +944,7 @@ export default {
   async editTrade(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Trades } = collections;
+      const { Trades, Ownership } = collections;
 
       const {
         productId,
@@ -964,13 +960,22 @@ export default {
         cancellationReason,
       } = args.input;
 
+      console.log("product id is ", productId);
+      let decodedProductId = decodeOpaqueId(productId).id;
+
+      // return new Error("testing product id")
+
       if (!userId || !authToken) return new Error("Unauthorized");
 
-      console.log("incoming data", price, area, expirationTime, minQty);
+      let owner = await Ownership.findOne({
+        ownerId: userId,
+        productId: decodedProductId,
+      });
+      let sum = owner?.amount + owner?.unitsEscrow;
+      if (area > sum)
+        return new Error("You cannot edit offer for more than you own");
 
-      console.log("args input ", args.input);
-
-      console.log("args trade is ", args.tradeId);
+      let unitsToUpdate = area - owner.unitsEscrow;
 
       let decodedTradeId = decodeOpaqueId(args.tradeId).id;
 
@@ -988,9 +993,19 @@ export default {
         {
           _id: ObjectID.ObjectId(decodedTradeId),
           createdBy: userId,
+          completionStatus: { $ne: "completed" },
         },
         { $set: { price, area, minQty, expirationTime } }
       );
+      if (result?.n > 0) {
+        await Ownership.update(
+          {
+            ownerId: userId,
+            productId: decodedProductId,
+          },
+          { $inc: { amount: -unitsToUpdate, unitsEscrow: unitsToUpdate } }
+        );
+      }
 
       return result?.n > 0;
     } catch (err) {

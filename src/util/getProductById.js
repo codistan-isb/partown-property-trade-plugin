@@ -13,6 +13,9 @@
 export default async function getProductById(context, productId) {
   const { collections } = context;
   const { Catalog } = collections;
-  let catalogItems = await Catalog.findOne({ "product._id": productId });
+  let catalogItems = await Catalog.findOne({
+    "product._id": productId,
+    "product.isVisible": { $ne: false },
+  });
   return catalogItems;
 }
