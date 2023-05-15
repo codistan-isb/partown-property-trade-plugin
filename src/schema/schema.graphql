@@ -24,7 +24,7 @@ type trade implements Node {
   price: Float!
   area: Float!
   originalQuantity: Float
-  expirationTime: String
+  expirationTime: DateTime
   tradeType: tradeTypeEnum!
   decorum: String
   minQty: Float!
@@ -70,7 +70,7 @@ input tradeInput {
   productId: String
   price: Float
   area: Float
-  expirationTime: String
+  expirationTime: DateTime
   tradeType: tradeTypeEnum
   approvalStatus: approvalStatusEnum
   decorum: String
@@ -278,7 +278,7 @@ extend type Mutation {
   updateOwnerShip(ownerId: String!, productId: String!, units: Float!): Boolean
   voteProperty(input: voteInput!): Boolean
   disableTrade(tradeId: ID!): Boolean
-  cancelTrade(tradeId: ID!): Boolean
+  cancelTrade(tradeId: ID!, propertyType: String!): Boolean
   editTrade(input: tradeInput, tradeId: ID!): Boolean
   clearNotification(notificationId: ID): Boolean
 

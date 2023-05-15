@@ -791,7 +791,7 @@ export default {
             netServiceCharge
           ),
           updateTradeUnits(collections, decodedTradeId, -units),
-          closeTrade(collections, decodedTradeId),
+          await closeTrade(collections, decodedTradeId),
 
           await createTradeTransaction(context, {
             amount: netBuyerPrice,
@@ -836,8 +836,7 @@ export default {
       if (product?.propertySaleType?.type !== "Premarket")
         return new Error("Property is not in the pre-market stage");
 
-      if (product?.expiryTime < currentTime)
-        return new Error("Voting has ended for this property");
+      if (product?.expiryTime < currentTime) return false;
 
       const filter = {
         userId,
@@ -878,28 +877,27 @@ export default {
       return err;
     }
   },
-  async cancelTrade(parent, { tradeId }, context, info) {
+  async cancelTrade(parent, { tradeId, propertyType }, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Trades, Ownership, Accounts } = collections;
+      const { Trades, Ownership, Accounts, ProductRate } = collections;
 
       if (!userId || !authToken) return new Error("Unauthorized");
 
       const res = await Trades.findOne({ _id: ObjectID.ObjectId(tradeId) });
 
+      const rates = await ProductRate.findOne({ productType: propertyType });
+
       let tradeType = res?.tradeType;
       let area = res?.area;
       let price = res?.price;
+      let initial = area * price;
 
-      let total = area * price;
+      let buyerFee = (rates.buyerFee / 100) * initial;
+      let total = initial + buyerFee;
+
       let productId = res?.productId;
 
-      console.log("trade id is ", tradeId);
-      console.log("res is  ", res);
-      console.log("res?.tradeType", res?.tradeType);
-      console.log("userId check is", userId);
-
-      console.log("productId is ", productId);
       // return null;
 
       const { result } = await Trades.updateOne(
@@ -997,13 +995,25 @@ export default {
         },
         { $set: { price, area, minQty, expirationTime } }
       );
-      if (result?.n > 0) {
+      if (result?.n > 0 && foundedTrade?.tradeType === "offer") {
         await Ownership.update(
           {
             ownerId: userId,
             productId: decodedProductId,
           },
           { $inc: { amount: -unitsToUpdate, unitsEscrow: unitsToUpdate } }
+        );
+      } else if (result?.n > 0 && foundedTrade?.tradeType === "bid") {
+        await Accounts.update(
+          {
+            _id: userId,
+          },
+          {
+            $inc: {
+              "wallets.amount": -unitsToUpdate,
+              "wallets.escrow": unitsToUpdate,
+            },
+          }
         );
       }
 

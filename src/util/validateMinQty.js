@@ -22,7 +22,7 @@ export default async function validateMinQty(collections, tradeId, quantity) {
   const { minQty, area } = result;
 
   if (area === 0) {
-    throw new Error("This trade has been completed");
+    throw new Error("The offer has been completed");
   }
 
   if (quantity < minQty) {
