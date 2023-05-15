@@ -791,9 +791,9 @@ export default {
             netServiceCharge
           ),
           updateTradeUnits(collections, decodedTradeId, -units),
-          await closeTrade(collections, decodedTradeId),
+          closeTrade(collections, decodedTradeId),
 
-          await createTradeTransaction(context, {
+          createTradeTransaction(context, {
             amount: netBuyerPrice,
             approvalStatus: "completed",
             transactionBy: userId,
