@@ -1,6 +1,7 @@
 import decodeOpaqueId from "@reactioncommerce/api-utils/decodeOpaqueId.js";
 import getPaginatedResponse from "@reactioncommerce/api-utils/graphql/getPaginatedResponse.js";
 import wasFieldRequested from "@reactioncommerce/api-utils/graphql/wasFieldRequested.js";
+import ReactionError from "@reactioncommerce/reaction-error";
 export default {
   async getTrades(parent, args, context, info) {
     try {
@@ -209,77 +210,6 @@ export default {
     }
   },
 
-  async remainingQuantity(parent, { productId }, context, info) {
-    try {
-      let { collections, userId, authToken } = context;
-
-      let decodedProductId = decodeOpaqueId(productId).id;
-
-      let { Trades, Catalog } = collections;
-      let { product } = await Catalog.findOne({
-        "product._id": decodedProductId,
-      });
-      let sum = [];
-      if (!userId) {
-        sum = await Trades.aggregate([
-          {
-            $match: {
-              productId: decodedProductId,
-              tradeType: "offer",
-              completionStatus: { $ne: "completed" },
-              isCancelled: { $ne: true },
-            },
-          },
-          {
-            $group: {
-              _id: "$productId",
-              totalUnits: { $sum: "$area" },
-              totalOriginal: { $sum: "$originalQuantity" },
-            },
-          },
-        ]).toArray();
-      } else {
-        sum = await Trades.aggregate([
-          {
-            $match: {
-              productId: decodedProductId,
-              tradeType: "offer",
-            },
-          },
-          {
-            $match: {
-              sellerId: { $ne: userId },
-              completionStatus: { $ne: "completed" },
-              isCancelled: { $ne: true },
-            },
-          },
-          {
-            $group: {
-              _id: "$productId",
-              totalUnits: { $sum: "$area" },
-              totalOriginal: { $sum: "$originalQuantity" },
-            },
-          },
-        ]).toArray();
-      }
-
-      console.log("sum", sum);
-
-      if (sum.length === 0) {
-        return 0;
-      }
-
-      let percentage = (
-        (sum[0]?.totalUnits / product?.area?.value) *
-        100
-      ).toFixed(2);
-
-      return percentage;
-    } catch (err) {
-      console.log("resale property quantity query");
-      return err;
-    }
-  },
   async propertyVotes(parent, { productId }, context, info) {
     try {
       let { Votes } = context.collections;
@@ -318,6 +248,36 @@ export default {
       });
 
       return getPaginatedResponse(allNotifications, connectionArgs, {
+        includeHasNextPage: wasFieldRequested("pageInfo.hasNextPage", info),
+        includeHasPreviousPage: wasFieldRequested(
+          "pageInfo.hasPreviousPage",
+          info
+        ),
+        includeTotalCount: wasFieldRequested("totalCount", info),
+      });
+    } catch (err) {
+      return err;
+    }
+  },
+
+  async propertyOwners(parent, args, context, info) {
+    try {
+      const { authToken, userId, collections } = context;
+      const { Ownership } = collections;
+      const { productId, searchQuery, shopId, ...connectionArgs } = args;
+      const decodedShopId = decodeOpaqueId(shopId).id;
+
+      if (!userId || !authToken)
+        throw new ReactionError("access-denied", "Access Denied");
+
+      // await context.validatePermissions("reaction:legacy:products", "read", {
+      //   shopId,
+      // });
+
+      const decodedProductId = decodeOpaqueId(productId).id;
+
+      let propertyOwners = Ownership.find({ productId: decodedProductId });
+      return getPaginatedResponse(propertyOwners, connectionArgs, {
         includeHasNextPage: wasFieldRequested("pageInfo.hasNextPage", info),
         includeHasPreviousPage: wasFieldRequested(
           "pageInfo.hasPreviousPage",

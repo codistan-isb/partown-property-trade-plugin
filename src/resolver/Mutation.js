@@ -14,6 +14,8 @@ import createTradeTransaction from "../util/createTradeTransaction.js";
 import markAsRead from "../util/markAsRead.js";
 import sendEmailOrPhoneNotification from "../util/sendEmailOrPhoneNotification.js";
 import buyerNotification from "../util/buyerNotification.js";
+import checkTradeExpiry from "../util/checkTradeExpiry.js";
+import removeOwnership from "../util/removeOwnership.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -144,6 +146,8 @@ export default {
       } = args.input;
 
       if (!authToken || !userId) return new Error("Unauthorized");
+
+      await checkTradeExpiry(collections, tradeId);
       await validateUser(context, userId);
 
       let userAccount = await Accounts.findOne({ userId });
@@ -292,6 +296,9 @@ export default {
           createdAt: new Date(),
           updatedAt: new Date(),
         });
+
+        //verified whether all units of the seller are sold
+        await removeOwnership(collections, sellerId, productId);
 
         await buyerNotification(
           context,
@@ -810,6 +817,8 @@ export default {
             createdAt: new Date(),
             updatedAt: new Date(),
           }),
+
+          removeOwnership(collections, sellerId, productId),
         ]);
         return result?.n > 0;
       }
@@ -1050,11 +1059,65 @@ export default {
         );
         return result?.n > 0;
       } else if (!notificationId) {
-        const result = await Notifications.updateMany({
-          to: userId,
-        });
+        const { result } = await Notifications.updateMany(
+          {
+            to: userId,
+          },
+          { $set: { isCleared: true } }
+        );
 
-        console.log("result is ", result);
+        return result?.n > 0;
+      }
+      return false;
+    } catch (err) {
+      return err;
+    }
+  },
+  async editOwnership(parent, args, context, info) {
+    try {
+      const { userId, authToken, collections } = context;
+      const { Ownership } = collections;
+
+      const { _id } = args;
+      const res = await Ownership.updateOne(
+        {
+          _id: ObjectID.ObjectID(_id),
+        },
+        {}
+      );
+    } catch (err) {
+      return err;
+    }
+  },
+  async removeOwner(parent, { ownershipId }, context, info) {
+    try {
+      const { userId, authToken, collections } = context;
+      const { Catalog, Ownership } = collections;
+
+      const { amount, productId } = await Ownership.findOne({
+        _id: ObjectID.ObjectId(ownershipId),
+      });
+
+      const { product } = await Catalog.findOne({
+        "product._id": productId,
+      });
+
+      if (product?.area?.availableQuantity !== amount)
+        return new Error(
+          "Cannot remove this user as owner, this user has already opened their units up for trading."
+        );
+
+      let { result: removedOwner } = await Ownership.deleteOne({
+        _id: ObjectID.ObjectId(ownershipId),
+      });
+      if (removedOwner) {
+        const { result } = await Catalog.updateOne(
+          {
+            "product._id": productId,
+          },
+          { $inc: { "product.area.availableQuantity": amount } }
+        );
+        return result?.n > 0;
       }
       return false;
     } catch (err) {

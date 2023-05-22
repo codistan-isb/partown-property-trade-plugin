@@ -285,6 +285,8 @@ extend type Mutation {
   # notifications
   createNotification(input: createNotificationInput): Notification
   markAsRead(notificationId: ID): Notification
+  editOwnership(id: ID!): Boolean
+  removeOwner(ownershipId: ID!): Boolean
 }
 
 enum NotificationsSortByField {
@@ -355,8 +357,38 @@ extend type Query {
     "By default, groups are sorted by when they were created, oldest first. Set this to sort by one of the other allowed fields"
     sortBy: AccountSortByField = createdAt
   ): UnitOwnershipConnection!
+  propertyOwners(
+    "product/property against which to find owners"
+    productId: ID!
 
-  remainingQuantity(productId: String!): Float
+    "shop id to validate shop owner"
+    shopId: ID!
+
+    "Search owners"
+    searchQuery: String
+
+    "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
+    after: ConnectionCursor
+
+    "Return only results that come before this cursor. Use this with `last` to specify the number of results to return."
+    before: ConnectionCursor
+
+    "Return at most this many results. This parameter may be used with either `after` or `offset` parameters."
+    first: ConnectionLimitInt
+
+    "Return at most this many results. This parameter may be used with the `before` parameter."
+    last: ConnectionLimitInt
+
+    "Return only results that come after the Nth result. This parameter may be used with the `first` parameter."
+    offset: Int
+
+    "Return results sorted in this order"
+    sortOrder: SortOrder = asc
+
+    "By default, groups are sorted by when they were created, oldest first. Set this to sort by one of the other allowed fields"
+    sortBy: AccountSortByField = createdAt
+  ): UnitOwnershipConnection!
+
   propertyVotes(productId: String!): voteOutput
 
   userNotifications(
