@@ -111,6 +111,7 @@ type UnitOwnership implements Node {
   ownerInfo: Account
   tradeHistory: [tradeTypeEnum]
   ownershipHistory: [ownershipHistory]
+  isPrimaryOwner: Boolean
 }
 
 type UnitOwnershipEdge implements NodeEdge {
@@ -267,6 +268,21 @@ input createNotificationInput {
   image: String
 }
 
+type Dividend implements Node {
+  _id: ID!
+  dividendBy: ID
+  dividendTo: [ID]
+  productId: ID
+  amount: Float!
+}
+
+input DividendInput {
+  dividendBy: ID!
+  dividendTo: [ID!]!
+  productId: ID!
+  amount: Float!
+}
+
 extend type Mutation {
   makePrimaryOwner(ownerId: String!, productId: String!): Boolean
   makeResaleOwner(ownerId: String!, productId: String!, units: Float!): Boolean
@@ -281,6 +297,7 @@ extend type Mutation {
   cancelTrade(tradeId: ID!, propertyType: String!): Boolean
   editTrade(input: tradeInput, tradeId: ID!): Boolean
   clearNotification(notificationId: ID): Boolean
+  addDividend(input: DividendInput!): Boolean
 
   # notifications
   createNotification(input: createNotificationInput): Notification

@@ -38,39 +38,40 @@ export default {
       let tradeResults = [];
       if (type) {
         tradeResults = await Trades.find({
-          productId: decodedId,
-          productId: {
-            $in: await Catalog.distinct("product._id", {
-              "product.isVisible": { $ne: false },
-            }),
-          },
-          tradeType: type,
-          createdBy: {
-            $ne: userId,
-          },
-          completionStatus: {
-            $ne: "completed",
-          },
-          isDisabled: { $ne: true },
-          isCancelled: { $ne: true },
+          $and: [
+            { productId: decodedId },
+            {
+              productId: {
+                $in: await Catalog.distinct("product._id", {
+                  "product.isVisible": { $ne: false },
+                }),
+              },
+            },
+            { tradeType: type },
+            { isDisabled: false },
+            { createdBy: { $ne: userId } },
+            { completionStatus: { $ne: "completed" } },
+            { isDisabled: { $ne: true } },
+            { isCancelled: { $ne: true } },
+          ],
         }).toArray();
       } else {
         tradeResults = await Trades.find({
-          productId: decodedId,
-          productId: {
-            $in: await Catalog.distinct("product._id", {
-              "product.isVisible": { $ne: false },
-            }),
-          },
-          isDisabled: false,
-          createdBy: {
-            $ne: userId,
-          },
-          completionStatus: {
-            $ne: "completed",
-          },
-          isDisabled: { $ne: true },
-          isCancelled: { $ne: true },
+          $and: [
+            { productId: decodedId },
+            {
+              productId: {
+                $in: await Catalog.distinct("product._id", {
+                  "product.isVisible": { $ne: false },
+                }),
+              },
+            },
+            { isDisabled: false },
+            { createdBy: { $ne: userId } },
+            { completionStatus: { $ne: "completed" } },
+            { isDisabled: { $ne: true } },
+            { isCancelled: { $ne: true } },
+          ],
         }).toArray();
       }
 

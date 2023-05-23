@@ -58,6 +58,14 @@ export default {
 
       if (!checkOwnerExist) return new Error("You don't own this property");
 
+      if (
+        checkOwnerExist?.isPrimaryOwner === null ||
+        checkOwnerExist?.isPrimaryOwner !== true
+      )
+        return new Error(
+          "You need to wait for the property to be opened to resale market"
+        );
+
       if (checkOwnerExist?.amount < area)
         return new Error(
           `You own ${checkOwnerExist?.amount} sqm for this property, you cannot sell more than that`
@@ -481,6 +489,7 @@ export default {
         amount: totalValue,
         unitsEscrow: 0,
         productId: id,
+        isPrimaryOwner: true,
       };
 
       let ownerToFind = await Accounts.findOne({
@@ -1119,6 +1128,31 @@ export default {
         );
         return result?.n > 0;
       }
+      return false;
+    } catch (err) {
+      return err;
+    }
+  },
+  async addDividend(parent, args, context, info) {
+    try {
+      const { userId, authToken, collections } = context;
+      const { Dividends } = collections;
+
+      // if (!userId || !authToken) return new Error("Unauthorized");
+      console.log("args input ", args.input);
+      const { dividendTo, amount, productId, dividendBy } = args.input;
+
+      let dividends = dividendTo.map((item) => {
+        return { dividendsTo: item, amount, productId, dividendBy };
+      });
+
+      const res = Promise.all(
+        dividends.map((item) => {
+          Dividends.insert(item);
+        })
+      );
+
+      console.log("res is ", res);
       return false;
     } catch (err) {
       return err;
