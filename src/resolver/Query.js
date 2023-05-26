@@ -290,4 +290,46 @@ export default {
       return err;
     }
   },
+
+  async userDocuments(parent, args, context, info) {
+    try {
+      const { authToken, userId, collections } = context;
+      const { UserDocuments } = collections;
+      const { accountId, searchQuery, ...connectionArgs } = args;
+      if (!authToken || !userId) return new Error("Unauthorized");
+
+      let idToUse = userId;
+      if (accountId) {
+        await context.validatePermissions("reaction:legacy:accounts", "read");
+        idToUse = decodeOpaqueId(accountId).id;
+      }
+
+      let selector = {
+        accountId: idToUse,
+      };
+
+      if (searchQuery) {
+        selector.$or = [
+          {
+            name: {
+              $regex: new RegExp(searchQuery, "i"),
+            },
+          },
+        ];
+      }
+
+      let documents = UserDocuments.find(selector);
+
+      return getPaginatedResponse(documents, connectionArgs, {
+        includeHasNextPage: wasFieldRequested("pageInfo.hasNextPage", info),
+        includeHasPreviousPage: wasFieldRequested(
+          "pageInfo.hasPreviousPage",
+          info
+        ),
+        includeTotalCount: wasFieldRequested("totalCount", info),
+      });
+    } catch (err) {
+      return err;
+    }
+  },
 };

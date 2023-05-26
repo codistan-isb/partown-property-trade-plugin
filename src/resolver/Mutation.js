@@ -51,6 +51,21 @@ export default {
       if (!authToken || !userId) return new Error("Unauthorized");
       await validateUser(context, userId);
 
+      const { product } = await Catalog.findOne({
+        "product._id": decodedId,
+      });
+
+      if (!product?.activeStatus) {
+        return new Error("This property has been removed from the market");
+      }
+
+      if (!expirationTime) {
+        const currentDate = new Date();
+        expirationTime = new Date(
+          currentDate.getTime() + 7 * 24 * 60 * 60 * 1000
+        );
+      }
+
       let checkOwnerExist = await Ownership.findOne({
         ownerId: decodeOpaqueId(userId).id,
         productId: decodeOpaqueId(productId).id,
@@ -72,10 +87,6 @@ export default {
         );
 
       let decodedId = decodeOpaqueId(productId).id;
-
-      const { product } = await Catalog.findOne({
-        "product._id": decodedId,
-      });
 
       if (product?.propertySaleType?.type !== "Primary")
         return new Error("Not a primary property");
@@ -361,12 +372,27 @@ export default {
 
       await validateUser(context, userId);
 
+      if (!expirationTime) {
+        const currentDate = new Date();
+        expirationTime = new Date(
+          currentDate.getTime() + 7 * 24 * 60 * 60 * 1000
+        );
+      }
+
       const ownerId = decodeOpaqueId(userId).id;
       const decodedProductId = decodeOpaqueId(productId).id;
       const ownerRes = await Ownership.findOne({
         ownerId: ownerId,
         productId: decodedProductId,
       });
+
+      const { product } = await Catalog.findOne({
+        "product._id": decodedProductId,
+      });
+
+      if (!product?.activeStatus || product?.activeStatus === false) {
+        return new Error("This property has been removed from the market");
+      }
 
       const rates = await ProductRate.findOne({ productType: "Resale" });
       const buyerFee = rates?.buyerFee
@@ -389,10 +415,6 @@ export default {
       if (tradeType === "bid") {
         await checkUserWallet(collections, userId, totalAmount);
       }
-
-      const { product } = await Catalog.findOne({
-        "product._id": decodedProductId,
-      });
 
       if (!product) {
         throw new Error("Property not found");
@@ -581,7 +603,7 @@ export default {
   async purchaseUnits(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Ownership, ProductRate, Accounts } = collections;
+      const { Ownership, ProductRate, Accounts, Catalog } = collections;
       const {
         sellerId,
         productId,
@@ -601,6 +623,14 @@ export default {
       const decodedSellerId = decodeOpaqueId(sellerId).id;
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
+
+      const { product } = Catalog.findOne({
+        "product._id": decodedProductId,
+      });
+
+      if (product?.activeStatus === false || product?.isVisible === false) {
+        return new Error("This property has been removed from the marketplace");
+      }
 
       let rates = await ProductRate.findOne({ productType: "Resale" });
       let buyerFee = 0;
@@ -707,7 +737,7 @@ export default {
   async sellUnits(parent, args, context, info) {
     try {
       let { authToken, userId, collections } = context;
-      let { Ownership, ProductRate, Accounts } = collections;
+      let { Ownership, ProductRate, Accounts, Catalog } = collections;
       let {
         sellerId,
         productId,
@@ -719,7 +749,19 @@ export default {
         minQty,
       } = args.input;
 
+      console.log("product id is ", productId);
+
       if (!authToken || !userId) return new Error("Unauthorized");
+      let decodedProductId = decodeOpaqueId(productId).id;
+
+      const { product } = await Catalog.findOne({
+        "product._id": decodedProductId,
+      });
+
+      if (product?.activeStatus === false || product?.isVisible === false) {
+        return new Error("This property has been removed from the marketplace");
+      }
+
       await validateUser(context, userId);
       let decodedTradeId = decodeOpaqueId(tradeId).id;
       let decodedBuyerId = decodeOpaqueId(buyerId).id;
@@ -903,6 +945,10 @@ export default {
       if (!userId || !authToken) return new Error("Unauthorized");
 
       const res = await Trades.findOne({ _id: ObjectID.ObjectId(tradeId) });
+      const current = new Date();
+      if (res.expirationTime < current) {
+        return new Error("This offer has been expired");
+      }
 
       const rates = await ProductRate.findOne({ productType: propertyType });
 
@@ -960,7 +1006,7 @@ export default {
   async editTrade(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Trades, Ownership } = collections;
+      const { Trades, Ownership, Catalog } = collections;
 
       const {
         productId,
@@ -978,10 +1024,34 @@ export default {
 
       console.log("product id is ", productId);
       let decodedProductId = decodeOpaqueId(productId).id;
-
+      let decodedTradeId = decodeOpaqueId(args.tradeId).id;
       // return new Error("testing product id")
 
       if (!userId || !authToken) return new Error("Unauthorized");
+
+      const { product } = await Catalog.findOne({
+        "product._id": decodedProductId,
+      });
+
+      if (product?.activeStatus === false || product?.isVisible === false)
+        return new Error(
+          "This property have been removed from the marketplace"
+        );
+
+      let foundedTrade = await Trades.findOne({
+        _id: ObjectID.ObjectId(decodedTradeId),
+        createdBy: userId,
+      });
+
+      const currentDate = new Date();
+
+      if (foundedTrade?.expirationTime < currentDate) {
+        return new Error("This offer has been expired");
+      }
+
+      if (!expirationTime) {
+        expirationTime = foundedTrade?.expirationTime;
+      }
 
       let owner = await Ownership.findOne({
         ownerId: userId,
@@ -989,19 +1059,9 @@ export default {
       });
       let sum = owner?.amount + owner?.unitsEscrow;
       if (area > sum)
-        return new Error("You cannot edit offer for more than you own");
+        return new Error("Your offer exceeds total amount available");
 
       let unitsToUpdate = area - owner.unitsEscrow;
-
-      let decodedTradeId = decodeOpaqueId(args.tradeId).id;
-
-      let foundedTrade = await Trades.findOne(
-        {
-          _id: ObjectID.ObjectId(decodedTradeId),
-          createdBy: userId,
-        },
-        { $set: { price, area, minQty, expirationTime } }
-      );
 
       console.log("founded trade is ", foundedTrade);
 
@@ -1133,27 +1193,70 @@ export default {
       return err;
     }
   },
-  async addDividend(parent, args, context, info) {
+  async addDividend(parent, { input, isEdit }, context, info) {
     try {
       const { userId, authToken, collections } = context;
       const { Dividends } = collections;
 
-      // if (!userId || !authToken) return new Error("Unauthorized");
-      console.log("args input ", args.input);
-      const { dividendTo, amount, productId, dividendBy } = args.input;
+      if (!userId || !authToken) return new Error("Unauthorized");
 
-      let dividends = dividendTo.map((item) => {
-        return { dividendsTo: item, amount, productId, dividendBy };
+      await context.validatePermissions(`reaction:legacy:accounts`, "create");
+
+      const { dividendTo, amount, productId, dividendBy } = input;
+
+      let bulkOperations = dividendTo.map((item) => {
+        const updateOperation = isEdit
+          ? { $set: { amount: amount } } // Set the amount
+          : { $inc: { amount: amount } }; // Increment the amount
+
+        return {
+          updateOne: {
+            filter: {
+              dividendsTo: item,
+              productId: productId,
+            },
+            update: updateOperation,
+            upsert: true,
+          },
+        };
       });
 
-      const res = Promise.all(
-        dividends.map((item) => {
-          Dividends.insert(item);
-        })
-      );
+      const { result } = await Dividends.bulkWrite(bulkOperations);
 
-      console.log("res is ", res);
-      return false;
+      return result?.ok > 0;
+    } catch (err) {
+      return err;
+    }
+  },
+  async addUserDocuments(parent, { input }, context, info) {
+    try {
+      const { userId, authToken, collections } = context;
+
+      const { UserDocuments } = collections;
+
+      const { name, accountId, url, productId } = input;
+
+      if (!userId || !authToken) return new Error("Unauthorized");
+
+      await context.validatePermissions(`reaction:legacy:accounts`, "create");
+
+      let createdAt = new Date();
+      let bulkOperations = url.map((item) => {
+        return {
+          insertOne: {
+            name,
+            accountId,
+            url: item,
+            productId,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        };
+      });
+
+      const { result } = await UserDocuments.bulkWrite(bulkOperations);
+
+      return result?.ok > 0;
     } catch (err) {
       return err;
     }

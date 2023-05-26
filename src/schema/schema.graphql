@@ -276,11 +276,77 @@ type Dividend implements Node {
   amount: Float!
 }
 
+type DividendEdge implements NodeEdge {
+  "The cursor that represents this node in the paginated results"
+  cursor: ConnectionCursor!
+
+  "The Transaction"
+  node: Dividend
+}
+
+type DividendConnection {
+  "The list of nodes that match the query, wrapped in an edge to provide a cursor string for each"
+  edges: [DividendEdge]
+
+  """
+  You can request the `nodes` directly to avoid the extra wrapping that `NodeEdge` has,
+  if you know you will not need to paginate the results.
+  """
+  nodes: [Dividend]
+
+  "Information to help a client request the next or previous page"
+  pageInfo: PageInfo!
+
+  "The total number of nodes that match your query"
+  totalCount: Int!
+}
+
 input DividendInput {
   dividendBy: ID!
   dividendTo: [ID!]!
   productId: ID!
   amount: Float!
+}
+
+type UserDocuments implements Node {
+  _id: ID!
+  name: String
+  accountId: ID
+  signedUrl: String
+  url: String
+  productId: ID
+}
+
+type UserDocumentsEdge implements NodeEdge {
+  "The cursor that represents this node in the paginated results"
+  cursor: ConnectionCursor!
+
+  "The Transaction"
+  node: UserDocuments
+}
+
+type UserDocumentsConnection {
+  "The list of nodes that match the query, wrapped in an edge to provide a cursor string for each"
+  edges: [UserDocumentsEdge]
+
+  """
+  You can request the `nodes` directly to avoid the extra wrapping that `NodeEdge` has,
+  if you know you will not need to paginate the results.
+  """
+  nodes: [UserDocuments]
+
+  "Information to help a client request the next or previous page"
+  pageInfo: PageInfo!
+
+  "The total number of nodes that match your query"
+  totalCount: Int!
+}
+
+input UserDocumentsInput {
+  name: String!
+  accountId: ID!
+  url: [String!]!
+  productId: ID!
 }
 
 extend type Mutation {
@@ -297,7 +363,10 @@ extend type Mutation {
   cancelTrade(tradeId: ID!, propertyType: String!): Boolean
   editTrade(input: tradeInput, tradeId: ID!): Boolean
   clearNotification(notificationId: ID): Boolean
-  addDividend(input: DividendInput!): Boolean
+  addDividend(input: DividendInput!, isEdit: Boolean!): Boolean
+
+  # user documents
+  addUserDocuments(input: UserDocumentsInput!): Boolean
 
   # notifications
   createNotification(input: createNotificationInput): Notification
@@ -405,6 +474,32 @@ extend type Query {
     "By default, groups are sorted by when they were created, oldest first. Set this to sort by one of the other allowed fields"
     sortBy: AccountSortByField = createdAt
   ): UnitOwnershipConnection!
+
+  userDocuments(
+    accountId: ID
+
+    searchQuery: String
+    "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
+    after: ConnectionCursor
+
+    "Return only results that come before this cursor. Use this with `last` to specify the number of results to return."
+    before: ConnectionCursor
+
+    "Return at most this many results. This parameter may be used with either `after` or `offset` parameters."
+    first: ConnectionLimitInt
+
+    "Return at most this many results. This parameter may be used with the `before` parameter."
+    last: ConnectionLimitInt
+
+    "Return only results that come after the Nth result. This parameter may be used with the `first` parameter."
+    offset: Int
+
+    "Return results sorted in this order"
+    sortOrder: SortOrder = asc
+
+    "By default, groups are sorted by when they were created, oldest first. Set this to sort by one of the other allowed fields"
+    sortBy: AccountSortByField = timeSent
+  ): UserDocumentsConnection!
 
   propertyVotes(productId: String!): voteOutput
 
