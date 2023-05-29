@@ -9,7 +9,6 @@ export default async function sendEmailOrPhoneNotification(context, userId) {
 
   const bodyTemplate = "trades/created";
 
-  
   const account = await Accounts.findOne({ userId });
 
   console.log("account is ", account);

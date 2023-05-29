@@ -1203,8 +1203,10 @@ export default {
       await context.validatePermissions(`reaction:legacy:accounts`, "create");
 
       const { dividendTo, amount, productId, dividendBy } = input;
+      const decodedProductId = decodeOpaqueId(productId).id;
 
       let bulkOperations = dividendTo.map((item) => {
+        let decodedUserId = decodeOpaqueId(item).id;
         const updateOperation = isEdit
           ? { $set: { amount: amount } } // Set the amount
           : { $inc: { amount: amount } }; // Increment the amount
@@ -1212,8 +1214,8 @@ export default {
         return {
           updateOne: {
             filter: {
-              dividendsTo: item,
-              productId: productId,
+              dividendsTo: decodedUserId,
+              productId: decodedProductId,
             },
             update: updateOperation,
             upsert: true,
@@ -1240,14 +1242,15 @@ export default {
 
       await context.validatePermissions(`reaction:legacy:accounts`, "create");
 
+      const decodedAccountId = decodeOpaqueId(accountId).id;
+
       let createdAt = new Date();
       let bulkOperations = url.map((item) => {
         return {
           insertOne: {
             name,
-            accountId,
+            accountId: decodedAccountId,
             url: item,
-            productId,
             createdAt,
             updatedAt: createdAt,
           },
@@ -1257,6 +1260,25 @@ export default {
       const { result } = await UserDocuments.bulkWrite(bulkOperations);
 
       return result?.ok > 0;
+    } catch (err) {
+      return err;
+    }
+  },
+  async removeUserDocument(parent, { documentId }, context, info) {
+    try {
+      const { userId, authToken, collections } = context;
+      const { UserDocuments } = collections;
+
+      if (!userId || !authToken) return new Error("Unauthorized");
+
+      await context.validatePermissions(`reaction:legacy:accounts`, "create");
+
+      const { result } = await UserDocuments.deleteOne({
+        _id: ObjectID.ObjectId(documentId),
+      });
+      console.log("deleted doc is ", deletedDoc);
+
+      return result?.n > 0;
     } catch (err) {
       return err;
     }

@@ -299,6 +299,8 @@ export default {
       if (!authToken || !userId) return new Error("Unauthorized");
 
       let idToUse = userId;
+      console.log("id to use is", idToUse);
+
       if (accountId) {
         await context.validatePermissions("reaction:legacy:accounts", "read");
         idToUse = decodeOpaqueId(accountId).id;

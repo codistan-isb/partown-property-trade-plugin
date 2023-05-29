@@ -346,7 +346,6 @@ input UserDocumentsInput {
   name: String!
   accountId: ID!
   url: [String!]!
-  productId: ID!
 }
 
 extend type Mutation {
@@ -367,6 +366,7 @@ extend type Mutation {
 
   # user documents
   addUserDocuments(input: UserDocumentsInput!): Boolean
+  removeUserDocument(documentId: ID!): Boolean
 
   # notifications
   createNotification(input: createNotificationInput): Notification
