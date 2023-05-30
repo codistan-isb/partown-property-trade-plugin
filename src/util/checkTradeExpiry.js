@@ -10,6 +10,6 @@ export default async function checkTradeExpiry(collections, tradeId) {
   const expirationDate = new Date(expirationTime);
 
   if (currentDate > expirationDate) {
-    throw new Error("This trade has expired");
+    throw new Error("This offer has expired");
   }
 }

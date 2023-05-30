@@ -1276,7 +1276,6 @@ export default {
       const { result } = await UserDocuments.deleteOne({
         _id: ObjectID.ObjectId(documentId),
       });
-      console.log("deleted doc is ", deletedDoc);
 
       return result?.n > 0;
     } catch (err) {
