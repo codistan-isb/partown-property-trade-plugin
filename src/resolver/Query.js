@@ -53,6 +53,7 @@ export default {
             { completionStatus: { $ne: "completed" } },
             { isDisabled: { $ne: true } },
             { isCancelled: { $ne: true } },
+            { expirationTime: { $gt: new Date() } },
           ],
         }).toArray();
       } else {
@@ -71,6 +72,7 @@ export default {
             { completionStatus: { $ne: "completed" } },
             { isDisabled: { $ne: true } },
             { isCancelled: { $ne: true } },
+            { expirationTime: { $gt: new Date() } },
           ],
         }).toArray();
       }
