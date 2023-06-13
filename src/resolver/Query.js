@@ -135,7 +135,7 @@ export default {
         };
       }
 
-      console.log("catalog is ", Catalog);
+      console.log("catalog is ", filter);
 
       filter.productId = {
         $in: await Catalog.distinct("product._id", {
@@ -167,7 +167,7 @@ export default {
   ) {
     try {
       let { authToken, userId, collections } = context;
-      let { Trades, Catalog } = collections;
+      let { Trades, Catalog, Products } = collections;
 
       console.log("user id is", userId);
       if (!authToken || !userId) return new Error("Unauthorized");
@@ -182,19 +182,22 @@ export default {
         matchStage.completionStatus = filter;
       }
 
-      if (searchQuery) {
-        matchStage.productId = {
-          $in: await collections.Product.distinct("product._id", {
-            title: { $regex: searchQuery, $options: "i" },
-          }),
-        };
-      }
-
       matchStage.productId = {
         $in: await Catalog.distinct("product._id", {
           "product.isVisible": { $ne: false },
         }),
       };
+
+      if (searchQuery) {
+        console.log("coming to in search query", searchQuery);
+        matchStage.productId = {
+          $in: await Products.distinct("_id", {
+            title: { $regex: searchQuery, $options: "i" },
+          }),
+        };
+      }
+
+      console.log("matchstate is ", matchStage);
 
       let allTrades = Trades.find(matchStage);
 

@@ -373,6 +373,9 @@ extend type Mutation {
   markAsRead(notificationId: ID): Notification
   editOwnership(id: ID!): Boolean
   removeOwner(ownershipId: ID!): Boolean
+
+  #test signe url generation
+  generateSignedUrlTest(url: String): String
 }
 
 enum NotificationsSortByField {

@@ -16,6 +16,9 @@ import sendEmailOrPhoneNotification from "../util/sendEmailOrPhoneNotification.j
 import buyerNotification from "../util/buyerNotification.js";
 import checkTradeExpiry from "../util/checkTradeExpiry.js";
 import removeOwnership from "../util/removeOwnership.js";
+import generateSignedUrl from "../util/getSignedUrl.js";
+import tradeNotification from "../util/tradeNotification.js";
+import sendDividendNotification from "../util/sendDividendNotification.js";
 
 export default {
   async createTradePrimary(parent, args, context, info) {
@@ -52,7 +55,7 @@ export default {
       await validateUser(context, userId);
 
       const { product } = await Catalog.findOne({
-        "product._id": decodedId,
+        "product._id": decodedProductId,
       });
 
       if (!product?.activeStatus) {
@@ -166,6 +169,12 @@ export default {
 
       if (!authToken || !userId) return new Error("Unauthorized");
 
+      const { _id: adminId } = await Accounts.findOne({
+        "adminUIShopIds.0": { $ne: null, $exists: true },
+      });
+
+      // console.log("admin account is ", adminAccount);
+
       await checkTradeExpiry(collections, tradeId);
       await validateUser(context, userId);
 
@@ -193,6 +202,10 @@ export default {
       if (rates?.sellerFee) {
         sellerFee = (rates.sellerFee / 100) * price;
       }
+
+      let { profile: buyerProfile } = await Accounts.findOne({
+        _id: userId,
+      });
 
       await checkUserWallet(
         collections,
@@ -319,21 +332,54 @@ export default {
         //verified whether all units of the seller are sold
         await removeOwnership(collections, sellerId, productId);
 
-        await buyerNotification(
+        //****buyer, seller, trustee, admin notification
+        const productTitle = product?.title;
+        const productImage = product?.primaryImage?.URLs?.thumbnail;
+
+        console.log("*********product Image is", productImage);
+
+        const productSlug = product?.slug;
+        //buyer
+        await tradeNotification(
           context,
           userId,
-          product?.title,
+          productTitle,
           units,
           "You",
-          userAccount?.profile?.picture
+          productSlug
         );
-        await buyerNotification(
+
+        //seller
+        await tradeNotification(
           context,
           decodeOpaqueId(sellerId).id,
-          product?.title,
+          productTitle,
           units,
-          `${userAccount?.profile?.firstName} ${userAccount?.profile?.lastName}`,
-          userAccount?.profile?.picture
+          `${buyerProfile?.firstName} ${buyerProfile?.lastName}`,
+          productImage,
+          productSlug
+        );
+
+        //trustee
+        await tradeNotification(
+          context,
+          decodeOpaqueId(product?.manager).id, //manager/ trustee id
+          productTitle,
+          units,
+          `${buyerProfile?.firstName} ${buyerProfile?.lastName}`,
+          productImage,
+          productSlug
+        );
+
+        //admin/platform
+        await tradeNotification(
+          context,
+          adminId, //admin id
+          productTitle,
+          units,
+          `${buyerProfile?.firstName} ${buyerProfile?.lastName}`,
+          productImage,
+          productSlug
         );
 
         return result?.n > 0;
@@ -1196,7 +1242,7 @@ export default {
   async addDividend(parent, { input, isEdit }, context, info) {
     try {
       const { userId, authToken, collections } = context;
-      const { Dividends } = collections;
+      const { Dividends, Accounts, Products, Catalog } = collections;
 
       if (!userId || !authToken) return new Error("Unauthorized");
 
@@ -1204,6 +1250,19 @@ export default {
 
       const { dividendTo, amount, productId, dividendBy } = input;
       const decodedProductId = decodeOpaqueId(productId).id;
+
+      const { product } = await Catalog.findOne({ "product._id": productId });
+      console.log("product is ", product);
+
+      if (!product?.isVisible)
+        return new Error("This property has been disabled");
+
+      await checkUserWallet(
+        collections,
+        decodeOpaqueId(product?.manager).id,
+        amount,
+        "The trustee does not have sufficient funds in their wallet to give this dividend, they need an additional"
+      );
 
       let bulkOperations = dividendTo.map((item) => {
         let decodedUserId = decodeOpaqueId(item).id;
@@ -1221,6 +1280,27 @@ export default {
             upsert: true,
           },
         };
+      });
+      const messageHeader =
+        "Congratulations, you have been awarded a Dividend ";
+      const messageBody = `Dividend Amount: ${amount}`;
+
+      if (isEdit) {
+        messageHeader = "Your dividend amount has been updated";
+        messageBody = "";
+      }
+
+      dividendTo?.map(async (item) => {
+        let account = await Accounts?.findOne({
+          _id: decodeOpaqueId(item).id,
+        });
+
+        await sendDividendNotification(
+          context,
+          account,
+          messageHeader,
+          messageBody
+        );
       });
 
       const { result } = await Dividends.bulkWrite(bulkOperations);
@@ -1280,6 +1360,14 @@ export default {
       return result?.n > 0;
     } catch (err) {
       return err;
+    }
+  },
+  async generateSignedUrlTest(parent, { url }, context, info) {
+    try {
+      console.log("test generate Signed Url");
+      return await generateSignedUrl(url);
+    } catch (err) {
+      return;
     }
   },
 };
