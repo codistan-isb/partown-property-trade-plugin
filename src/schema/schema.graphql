@@ -108,7 +108,7 @@ type UnitOwnership implements Node {
   tradeInfo: trade
   tradeType: tradeTypeEnum
   ownerId: String
-  dividendReceived: String
+  dividendReceived: Float
   ownerInfo: Account
   tradeHistory: [tradeTypeEnum]
   ownershipHistory: [ownershipHistory]

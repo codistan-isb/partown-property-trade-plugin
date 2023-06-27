@@ -1331,7 +1331,7 @@ export default {
   //             dividendsTo: decodedUserId,
   //             productId: decodedProductId,
   //           },
-  //           update: updateOperation,
+  //           update: { $inc: { amount: amount } },
   //           upsert: true,
   //         },
   //       };
@@ -1368,23 +1368,28 @@ export default {
   async addDividend(parent, { input }, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Ownership, Catalog, Accounts } = collections;
+
+      if (!userId || !authToken) return new Error("Unauthorized");
+
+      await context.validatePermissions(`reaction:legacy:accounts`, "create");
+
+      const { Ownership, Catalog, Accounts, Dividends } = collections;
       const { dividendTo, productId, amount } = input;
       const decodedProductId = decodeOpaqueId(productId).id;
 
       let decodedOwnerIds = dividendTo.map((id) => {
         return decodeOpaqueId(id).id;
       });
+
       const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
 
-      const decodedManagerId = decodeOpaqueId(product?.manager).id;
-      console.log("decoded manager id", decodedManagerId);
-
       if (product?.isDisabled) {
         return new Error("This property is disabled");
       }
+
+      const decodedManagerId = decodeOpaqueId(product?.manager).id;
 
       const ownersList = await Ownership.find({
         productId: decodedProductId,
@@ -1424,8 +1429,16 @@ export default {
         if (userSumMap.hasOwnProperty(ownerId)) {
           const sum = (userSumMap[ownerId] * amount) / 100;
 
-          console.log("sum is ", sum);
           await addDividendAmount(collections, ownerId, sum);
+          console.log("inside loop");
+          await Dividends.updateOne(
+            {
+              dividendTo: ownerId,
+              productId: decodedProductId,
+            },
+            { $inc: { amount: sum } },
+            { upsert: true }
+          );
         }
       }
       const { result } = await Accounts.updateOne(

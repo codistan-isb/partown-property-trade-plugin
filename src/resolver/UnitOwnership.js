@@ -24,7 +24,7 @@ export default {
 
     const [dividendsReceived] = await Dividends.aggregate([
       {
-        $match: { dividendsTo: ownerId, productId },
+        $match: { dividendTo: ownerId, productId },
       },
       {
         $group: {
@@ -35,6 +35,8 @@ export default {
         },
       },
     ]).toArray();
+
+    console.log("")
 
     return dividendsReceived ? dividendsReceived?.dividendsReceived : 0;
   },

@@ -10,4 +10,5 @@ export default async function addDividendAmount(
     },
     { $inc: { "wallets.amount": amount } }
   );
+  return result?.n > 0;
 }
