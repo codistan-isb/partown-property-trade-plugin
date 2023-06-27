@@ -37,6 +37,7 @@ export default async function sendDividendNotification(
   //account information
 
   let email = _.get(account, "emails[0].address");
+  let phoneNumber = _.get(account, "profile.phone");
 
   console.log("email is***** ", email);
 
@@ -61,7 +62,7 @@ export default async function sendDividendNotification(
     await sendDividendEmail(context, email, messageHeader, messageBody);
   }
   if (hasEnabledSMSNotification) {
-    console.log("*******sending phone notification dividend**********");
+    await context.mutations.sendPhoneNotification(phoneNumber, messageBody);
   }
   return true;
 }

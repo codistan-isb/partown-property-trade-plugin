@@ -108,6 +108,7 @@ type UnitOwnership implements Node {
   tradeInfo: trade
   tradeType: tradeTypeEnum
   ownerId: String
+  dividendReceived: String
   ownerInfo: Account
   tradeHistory: [tradeTypeEnum]
   ownershipHistory: [ownershipHistory]
@@ -371,6 +372,7 @@ extend type Mutation {
   # notifications
   createNotification(input: createNotificationInput): Notification
   markAsRead(notificationId: ID): Notification
+  markAllAsRead: Boolean
   editOwnership(id: ID!): Boolean
   removeOwner(ownershipId: ID!): Boolean
 

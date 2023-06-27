@@ -19,7 +19,9 @@ import removeOwnership from "../util/removeOwnership.js";
 import generateSignedUrl from "../util/getSignedUrl.js";
 import tradeNotification from "../util/tradeNotification.js";
 import sendDividendNotification from "../util/sendDividendNotification.js";
-
+import checkTrusteeWallet from "../util/checkTrusteeWallet.js";
+import ReactionError from "@reactioncommerce/reaction-error";
+import addDividendAmount from "../util/addDividendAmount.js";
 export default {
   async createTradePrimary(parent, args, context, info) {
     try {
@@ -1158,6 +1160,22 @@ export default {
     let mkr = await markAsRead(context, args);
     return mkr;
   },
+  async markAllAsRead(parent, args, context, info) {
+    console.log("args");
+    const { authToken, userId, collections } = context;
+    console.log("auth token ", authToken, "user id is ", userId);
+
+    console.log("collections are ", collections);
+    const { Notifications } = collections;
+    if (!authToken || !userId) return false;
+
+    const { result } = await Notifications.updateMany(
+      { to: userId },
+      { $set: { status: "read" } }
+    );
+
+    return result?.n > 0;
+  },
   async clearNotification(parent, { notificationId }, context, info) {
     try {
       const { userId, authToken, collections } = context;
@@ -1239,62 +1257,191 @@ export default {
       return err;
     }
   },
-  async addDividend(parent, { input, isEdit }, context, info) {
+
+  // authenticate admin
+  // calculate percentage total against ownership
+  // calculate total amount for each owner(user)
+  // check manager wallet for dividend award against total amount
+  // update owners wallets
+  // update trustee's wallet
+
+  // async addDividend(parent, { input, isEdit }, context, info) {
+  //   try {
+  //     const { userId, authToken, collections } = context;
+  //     const { Dividends, Accounts, Products, Catalog, Ownership } = collections;
+
+  //     // if (!userId || !authToken) return new Error("Unauthorized");
+
+  //     if (!authToken) {
+  //       throw new ReactionError("server-error", "Bad Request");
+  //     }
+
+  //     // await context.validatePermissions(`reaction:legacy:accounts`, "create");
+
+  //     const { dividendTo, amount, productId, dividendBy } = input;
+
+  //     const decodedProductId = decodeOpaqueId(productId).id;
+
+  //     const { manager: managerId, area } = await Products.findOne({
+  //       _id: decodedProductId,
+  //     });
+
+  //     let decodedAccountIds = dividendTo?.map((id) => {
+  //       return decodeOpaqueId(id).id;
+  //     });
+
+  //     const decodedManagerId = decodeOpaqueId(managerId).id;
+
+  //     console.log("manager id is", decodedManagerId);
+
+  //     let [totalAmount] = await Ownership.aggregate([
+  //       {
+  //         $match: {
+  //           productId: decodedProductId,
+  //           ownerId: { $in: decodedAccountIds }, // Use $nin to match documents where ownerId is not in the provided array
+  //         },
+  //       },
+  //       { $group: { _id: "$productId", totalAmount: { $sum: "$amount" } } },
+  //     ]).toArray();
+  //     totalAmount = totalAmount?.totalAmount;
+
+  //     // amount represents the percentage of the dividend to be provided against total ownership
+  //     let amountToCheck = (totalAmount * amount) / 100;
+
+  //     // console.log("amount to check is ", amountToCheck);
+
+  //     // check whether the property is disabled or not
+  //     const { product } = await Catalog.findOne({ "product._id": productId });
+  //     if (!product?.isVisible)
+  //       return new Error("This property has been disabled");
+
+  //     await checkUserWallet(
+  //       collections,
+  //       decodedManagerId,
+  //       amountToCheck,
+  //       "The trustee does not have sufficient funds in their wallet to give this dividend, they need an additional"
+  //     );
+
+  //     let bulkOperations = dividendTo.map((item) => {
+  //       let decodedUserId = decodeOpaqueId(item).id;
+
+  //       return {
+  //         updateOne: {
+  //           filter: {
+  //             dividendsTo: decodedUserId,
+  //             productId: decodedProductId,
+  //           },
+  //           update: updateOperation,
+  //           upsert: true,
+  //         },
+  //       };
+  //     });
+  //     const messageHeader =
+  //       "Congratulations, you have been awarded a Dividend ";
+  //     const messageBody = `Dividend Amount: ${amount}`;
+
+  //     if (isEdit) {
+  //       messageHeader = "Your dividend amount has been updated";
+  //       messageBody = "";
+  //     }
+
+  //     dividendTo?.map(async (item) => {
+  //       let account = await Accounts?.findOne({
+  //         _id: decodeOpaqueId(item).id,
+  //       });
+
+  //       await sendDividendNotification(
+  //         context,
+  //         account,
+  //         messageHeader,
+  //         messageBody
+  //       );
+  //     });
+
+  //     const { result } = await Dividends.bulkWrite(bulkOperations);
+
+  //     return result?.ok > 0;
+  //   } catch (err) {
+  //     return err;
+  //   }
+  // },
+  async addDividend(parent, { input }, context, info) {
     try {
-      const { userId, authToken, collections } = context;
-      const { Dividends, Accounts, Products, Catalog } = collections;
-
-      if (!userId || !authToken) return new Error("Unauthorized");
-
-      await context.validatePermissions(`reaction:legacy:accounts`, "create");
-
-      const { dividendTo, amount, productId, dividendBy } = input;
+      const { authToken, userId, collections } = context;
+      const { Ownership, Catalog, Accounts } = collections;
+      const { dividendTo, productId, amount } = input;
       const decodedProductId = decodeOpaqueId(productId).id;
 
-      const { product } = await Catalog.findOne({ "product._id": productId });
-      console.log("product is ", product);
-
-      if (!product?.isVisible)
-        return new Error("This property has been disabled");
-
-      await checkUserWallet(
-        collections,
-        decodeOpaqueId(product?.manager).id,
-        amount,
-        "The trustee does not have sufficient funds in their wallet to give this dividend, they need an additional"
-      );
-
-      let bulkOperations = dividendTo.map((item) => {
-        let decodedUserId = decodeOpaqueId(item).id;
-        const updateOperation = isEdit
-          ? { $set: { amount: amount } } // Set the amount
-          : { $inc: { amount: amount } }; // Increment the amount
-
-        return {
-          updateOne: {
-            filter: {
-              dividendsTo: decodedUserId,
-              productId: decodedProductId,
-            },
-            update: updateOperation,
-            upsert: true,
-          },
-        };
+      let decodedOwnerIds = dividendTo.map((id) => {
+        return decodeOpaqueId(id).id;
       });
-      const messageHeader =
-        "Congratulations, you have been awarded a Dividend ";
-      const messageBody = `Dividend Amount: ${amount}`;
+      const { product } = await Catalog.findOne({
+        "product._id": decodedProductId,
+      });
 
-      if (isEdit) {
-        messageHeader = "Your dividend amount has been updated";
-        messageBody = "";
+      const decodedManagerId = decodeOpaqueId(product?.manager).id;
+      console.log("decoded manager id", decodedManagerId);
+
+      if (product?.isDisabled) {
+        return new Error("This property is disabled");
       }
 
-      dividendTo?.map(async (item) => {
+      const ownersList = await Ownership.find({
+        productId: decodedProductId,
+        ownerId: { $in: decodedOwnerIds },
+        ownershipHistory: { $exists: true },
+      }).toArray();
+
+      let userSumMap = {};
+      let totalPricing = ownersList?.map((owner) => {
+        return owner?.ownershipHistory?.map((ownershipHistory, key) => {
+          console.log("ownershipHistory", ownershipHistory);
+          if (ownershipHistory?.tradeType === "buy") {
+            const ownerKey = owner.ownerId; // ownerId as key for owner specific sum
+            if (!userSumMap.hasOwnProperty(ownerKey)) {
+              userSumMap[ownerKey] = 0; // null check
+            }
+            userSumMap[ownerKey] += ownershipHistory.price;
+            return ownershipHistory.price;
+          }
+        });
+      });
+
+      let flattenedArray = totalPricing.flat();
+
+      //finding the sum total of the amount paid by all owners.
+      let totalSum = flattenedArray.reduce(
+        (accumulator, currentValue) => accumulator + currentValue,
+        0
+      );
+      let dividendAmount = (totalSum * amount) / 100;
+      console.log("dividend amount is ", dividendAmount);
+
+      await checkTrusteeWallet(collections, decodedManagerId, dividendAmount);
+      console.log("user sum map is ", userSumMap);
+
+      for (const ownerId in userSumMap) {
+        if (userSumMap.hasOwnProperty(ownerId)) {
+          const sum = (userSumMap[ownerId] * amount) / 100;
+
+          console.log("sum is ", sum);
+          await addDividendAmount(collections, ownerId, sum);
+        }
+      }
+      const { result } = await Accounts.updateOne(
+        {
+          _id: decodedManagerId,
+        },
+        { $inc: { "wallets.amount": -dividendAmount } }
+      );
+
+      decodedOwnerIds?.map(async (item) => {
         let account = await Accounts?.findOne({
           _id: decodeOpaqueId(item).id,
         });
 
+        const messageHeader = "Congratulations ";
+        const messageBody = `You have been awarded a Dividend of ${amount}%`;
         await sendDividendNotification(
           context,
           account,
@@ -1303,9 +1450,7 @@ export default {
         );
       });
 
-      const { result } = await Dividends.bulkWrite(bulkOperations);
-
-      return result?.ok > 0;
+      return result?.n > 0;
     } catch (err) {
       return err;
     }

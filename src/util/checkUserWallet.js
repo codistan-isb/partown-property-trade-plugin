@@ -15,6 +15,6 @@ export default async function checkUserWallet(
   console.log("amount to check is ", amountToCheck);
   if (wallets === undefined || wallets?.amount < amountToCheck)
     throw new Error(
-      `${msg} ₦${amountToCheck - (wallets?.amount ? wallets?.amount : 0)}`
+      `${msg} an additional ₦${amountToCheck - (wallets?.amount ? wallets?.amount : 0)} are required`
     );
 }
