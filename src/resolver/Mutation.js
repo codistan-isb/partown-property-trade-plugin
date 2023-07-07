@@ -246,7 +246,6 @@ export default {
         return new Error("This property has been fully subscribed");
       }
 
-
       if (totalSum + units > product?.area?.value) {
         return new Error(
           `The total units available for this property are ${
@@ -671,6 +670,8 @@ export default {
         minQty,
       } = args.input;
 
+      console.log("product id from input is ", productId);
+
       if (!authToken || !userId) return new Error("Unauthorized");
       await validateUser(context, userId);
 
@@ -679,12 +680,16 @@ export default {
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
 
-      const { product } = Catalog.findOne({
+      console.log("decoded product id", decodedProductId);
+      const product = await Catalog.findOne({
         "product._id": decodedProductId,
       });
 
       //decoded manger id for manager wallet adjustment
-      const decodedManagerId = decodeOpaqueId(product?.manager).id;
+
+      console.log("product?.manager is ", product?.manager);
+      console.log("product is ", product);
+      const decodedManagerId = product?.manager;
 
       if (product?.activeStatus === false || product?.isVisible === false) {
         return new Error("This property has been removed from the marketplace");
