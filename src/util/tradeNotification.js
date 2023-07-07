@@ -21,14 +21,11 @@ export default async function tradeNotification(
 
   const account = await Accounts.findOne({ _id: accountId });
 
-  
-
   //account information
 
   let email = _.get(account, "emails[0].address");
 
-
-  console.log("email is***** ", email)
+  console.log("email is***** ", email);
 
   let profileImage = _.get(account, "profile.picture");
 
@@ -42,7 +39,7 @@ export default async function tradeNotification(
   );
 
   console.log(
-    "enaled check",
+    "enabled check",
     hasEnabledEmailNotification,
     hasEnabledSMSNotification
   );

@@ -113,6 +113,8 @@ type UnitOwnership implements Node {
   tradeHistory: [tradeTypeEnum]
   ownershipHistory: [ownershipHistory]
   isPrimaryOwner: Boolean
+  amountOwned: Float
+  totalRemaining: Float
 }
 
 type UnitOwnershipEdge implements NodeEdge {

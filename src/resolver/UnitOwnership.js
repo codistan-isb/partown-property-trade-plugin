@@ -36,8 +36,40 @@ export default {
       },
     ]).toArray();
 
-    console.log("")
+    console.log("");
 
     return dividendsReceived ? dividendsReceived?.dividendsReceived : 0;
+  },
+  async amountOwned(parent, args, context, info) {
+    const { productId, ownerId } = parent;
+    const { Catalog, Ownership } = context.collections;
+    const { amount } = await Ownership.findOne({ ownerId, productId });
+    const { product } = await Catalog.findOne({ "product._id": productId });
+    const { area } = product;
+    const totalArea = area?.value;
+    // console.log("total area is ", totalArea);
+    // console.log("area is", amount);
+    return ((amount / totalArea) * 100).toFixed(2);
+  },
+  async totalRemaining(parent, args, context, info) {
+    const { productId, ownerId } = parent;
+    const { Catalog, Ownership } = context.collections;
+    const { product } = await Catalog.findOne({ "product._id": productId });
+    let [sum] = await Ownership.aggregate([
+      {
+        $match: {
+          productId,
+        },
+      },
+      { $group: { _id: "$productId", totalUnits: { $sum: "$amount" } } },
+    ]).toArray();
+
+    let totalOwned = sum?.totalUnits;
+
+    const { area } = product;
+    const totalValue = area?.value;
+    const remaining = totalValue - totalOwned;
+    console.log("test remaining", (remaining / totalValue) * 100);
+    return ((remaining / totalValue) * 100).toFixed(2);
   },
 };

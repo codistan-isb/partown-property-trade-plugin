@@ -193,9 +193,9 @@ export default {
       }).toArray();
 
       // const totalPrice = units * price;
-      //1% service charge
+      //current service charge service charge
       let rates = await ProductRate.findOne({ productType: "Primary" });
-      // console.log("rates are ", rates);
+
       let buyerFee = 0;
       let sellerFee = 0;
       if (rates?.buyerFee) {
@@ -220,6 +220,8 @@ export default {
       const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
+
+      const decodedManagerId = decodeOpaqueId(product?.manager).id;
 
       let sum = [];
       if (allOwners.length > 1) {
@@ -280,7 +282,7 @@ export default {
 
       const netBuyerPrice = price + buyerFee;
       const netSellerPrice = price - sellerFee;
-      const netServiceCharge = buyerFee + sellerFee;
+      // const netServiceCharge = buyerFee + sellerFee;
       if (lastErrorObject?.n > 0) {
         const { result } = await Ownership.update(
           { ownerId: decodeOpaqueId(sellerId).id, productId: decodedProductId },
@@ -301,11 +303,14 @@ export default {
           netSellerPrice
         );
 
+        //update manager/trustee wallet
+        await updateWallet(collections, decodedManagerId, buyerFee);
+
         //update admin/platform funds
         await updateWallet(
           collections,
           decodeOpaqueId(process.env.ADMIN_ID).id,
-          netServiceCharge
+          sellerFee
         );
 
         // await updateAvailableQuantity(collections, decodedProductId, -units);
@@ -676,6 +681,9 @@ export default {
         "product._id": decodedProductId,
       });
 
+      //decoded manger id for manager wallet adjustment
+      const decodedManagerId = decodeOpaqueId(product?.manager).id;
+
       if (product?.activeStatus === false || product?.isVisible === false) {
         return new Error("This property has been removed from the marketplace");
       }
@@ -743,15 +751,17 @@ export default {
           ? userAccount?.profile?.transactionId
           : "n/a";
 
-        // Update buyer, seller, and platform wallets
+        // Update buyer, seller, manager, and  platform wallets
         await Promise.all([
           updateWallet(collections, decodedBuyerId, -netBuyerPrice),
 
           updateWallet(collections, decodedSellerId, netSellerPrice),
+
+          updateWallet(collections, decodedManagerId, buyerFee),
           updateWallet(
             collections,
             decodeOpaqueId(process.env.ADMIN_ID).id,
-            netServiceCharge
+            sellerFee
           ),
           updateTradeUnits(collections, decodedTradeId, -units, minQty),
         ]);
@@ -809,6 +819,9 @@ export default {
       if (product?.activeStatus === false || product?.isVisible === false) {
         return new Error("This property has been removed from the marketplace");
       }
+
+      //manager id for manager wallet adjustment
+      const decodedManagerId = decodeOpaqueId(product?.manager).id;
 
       await validateUser(context, userId);
       let decodedTradeId = decodeOpaqueId(tradeId).id;
@@ -891,10 +904,16 @@ export default {
             decodeOpaqueId(sellerId).id,
             netSellerPrice
           ),
+
+          //manager wallet
+
+          updateWallet(collections, decodedManagerId, buyerFee),
+
+          //platform wallet
           updateWallet(
             collections,
             decodeOpaqueId(process.env.ADMIN_ID).id,
-            netServiceCharge
+            sellerFee
           ),
           updateTradeUnits(collections, decodedTradeId, -units),
           closeTrade(collections, decodedTradeId),

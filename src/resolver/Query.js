@@ -275,10 +275,10 @@ export default {
 
       if (!userId || !authToken)
         throw new ReactionError("access-denied", "Access Denied");
-
-      // await context.validatePermissions("reaction:legacy:products", "read", {
-      //   shopId,
-      // });
+      let selector = {};
+      await context.validatePermissions("reaction:legacy:products", "read", {
+        shopId,
+      });
 
       const decodedProductId = decodeOpaqueId(productId).id;
 
