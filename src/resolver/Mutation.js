@@ -245,6 +245,8 @@ export default {
 
         return new Error("This property has been fully subscribed");
       }
+
+
       if (totalSum + units > product?.area?.value) {
         return new Error(
           `The total units available for this property are ${
@@ -282,7 +284,7 @@ export default {
 
       const netBuyerPrice = price + buyerFee;
       const netSellerPrice = price - sellerFee;
-      // const netServiceCharge = buyerFee + sellerFee;
+      const netServiceCharge = buyerFee + sellerFee;
       if (lastErrorObject?.n > 0) {
         const { result } = await Ownership.update(
           { ownerId: decodeOpaqueId(sellerId).id, productId: decodedProductId },
