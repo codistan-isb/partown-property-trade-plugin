@@ -54,6 +54,7 @@ export default {
             { isDisabled: { $ne: true } },
             { isCancelled: { $ne: true } },
             { expirationTime: { $gt: new Date() } },
+            { area: { $ne: 0 } },
           ],
         }).toArray();
       } else {
@@ -73,6 +74,7 @@ export default {
             { isDisabled: { $ne: true } },
             { isCancelled: { $ne: true } },
             { expirationTime: { $gt: new Date() } },
+            { area: { $ne: 0 } },
           ],
         }).toArray();
       }

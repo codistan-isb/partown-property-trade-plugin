@@ -1077,10 +1077,22 @@ export default {
       return err;
     }
   },
+
+  //validate property active/deletion status
+  //for buy trade:
+  //if price new => validate user wallet => update price
+  //if quantity new => check max units of property => update quantity
+  //if date new => check the date is not in the past => update date
+
+  //for sell type trade:
+  //if price new => update price
+  //if quantity less than previous => transfer amount from unitEscrow to ownership
+  //if quantity greater than previous => validate ownership => transfer units from ownerShip to unitEscrow
+  //if date new => check the date is not in the past => update date
   async editTrade(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Trades, Ownership, Catalog } = collections;
+      const { Trades, Ownership, Catalog, Accounts } = collections;
 
       const {
         productId,
@@ -1096,13 +1108,16 @@ export default {
         cancellationReason,
       } = args.input;
 
-      console.log("product id is ", productId);
+      if (minQty > area) {
+        return new Error("Minimum Quantity cannot be more greater");
+      }
+
       let decodedProductId = decodeOpaqueId(productId).id;
       let decodedTradeId = decodeOpaqueId(args.tradeId).id;
-      // return new Error("testing product id")
-
+      let updatedFields = {
+        minQty,
+      };
       if (!userId || !authToken) return new Error("Unauthorized");
-
       const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
@@ -1117,59 +1132,163 @@ export default {
         createdBy: userId,
       });
 
-      const currentDate = new Date();
-
-      if (foundedTrade?.expirationTime < currentDate) {
-        return new Error("This offer has been expired");
-      }
-
-      if (!expirationTime) {
-        expirationTime = foundedTrade?.expirationTime;
-      }
-
-      let owner = await Ownership.findOne({
-        ownerId: userId,
-        productId: decodedProductId,
-      });
-      let sum = owner?.amount + owner?.unitsEscrow;
-      if (area > sum)
-        return new Error("Your offer exceeds total amount available");
-
-      let unitsToUpdate = area - owner.unitsEscrow;
-
       console.log("founded trade is ", foundedTrade);
+      //buy type trade
+      if (foundedTrade?.tradeType === "bid") {
+        const amountToCheck = price * area;
+        // const expiry = new Date(expirationTime);
+        // const expiryOld = new Date(expirationTime);
 
-      let { result } = await Trades.updateOne(
+        if (expirationTime) {
+          updatedFields["expirationTime"] = expirationTime;
+        }
+        if (foundedTrade?.price !== price) {
+          await checkUserWallet(collections, userId, amountToCheck);
+          updatedFields["price"] = price;
+        }
+        if (foundedTrade?.area !== area) {
+          const { product } = await Catalog.findOne({
+            "product._id": foundedTrade?.productId,
+          });
+          const { area: propertyArea } = product;
+          if (area > propertyArea?.value)
+            return new Error(
+              "You cannot purchase more than the total value of the property"
+            );
+          updatedFields["area"] = area;
+        }
+
+        console.log("updated fields are ", updatedFields);
+      }
+
+      if (foundedTrade?.tradeType === "offer") {
+        if (expirationTime) {
+          updatedFields["expirationTime"] = expirationTime;
+        }
+        if (price !== foundedTrade?.price) {
+          updatedFields["price"] = price;
+        }
+        if (area !== foundedTrade?.area && area < foundedTrade?.quantity) {
+          const { result } = await Ownership.updateOne(
+            {
+              productId: tradeType?.productId,
+              ownerId: userId,
+            },
+            {
+              $inc: { unitsEscrow: -amount, amount: +amount },
+            }
+          );
+          console.log("result 1 ", result);
+          if (result?.n > 0) {
+            updatedFields["quantity"] = quantity;
+          }
+        }
+        if (area !== foundedTrade?.area && area > foundedTrade?.quantity) {
+          //validate ownership
+          const res = await Ownership.findOne({
+            ownerId: userId,
+            productId: foundedTrade?.productId,
+          });
+
+          const unitsEscrow = res?.unitsEscrow ? res?.unitsEscrow : 0;
+          const ownedAmount = res?.amount + unitsEscrow;
+
+          if (ownedAmount < area) {
+            return new Error("You cannot sell more than what you own");
+          }
+
+          const { result } = await Ownership.updateOne(
+            {
+              productId: tradeType?.productId,
+              ownerId: userId,
+            },
+            {
+              $inc: { amount: +amount, unitsEscrow: -amount },
+            }
+          );
+          console.log("result 2 ", result);
+          if (result?.n > 0) {
+            updatedFields["quantity"] = quantity;
+          }
+        }
+      }
+
+      const { result } = await Trades.updateOne(
         {
           _id: ObjectID.ObjectId(decodedTradeId),
           createdBy: userId,
           completionStatus: { $ne: "completed" },
         },
-        { $set: { price, area, minQty, expirationTime } }
+        { $set: updatedFields }
       );
-      if (result?.n > 0 && foundedTrade?.tradeType === "offer") {
-        await Ownership.update(
-          {
-            ownerId: userId,
-            productId: decodedProductId,
-          },
-          { $inc: { amount: -unitsToUpdate, unitsEscrow: unitsToUpdate } }
-        );
-      } else if (result?.n > 0 && foundedTrade?.tradeType === "bid") {
-        await Accounts.update(
-          {
-            _id: userId,
-          },
-          {
-            $inc: {
-              "wallets.amount": -unitsToUpdate,
-              "wallets.escrow": unitsToUpdate,
-            },
-          }
-        );
-      }
 
       return result?.n > 0;
+
+      // if (foundedTrade?.price === price) {
+      //   let { result } = await Trades.updateOne(
+      //     {
+      //       _id: ObjectID.ObjectId(decodedTradeId),
+      //       createdBy: userId,
+      //       completionStatus: { $ne: "completed" },
+      //     },
+      //     { $set: { price, area, minQty, expirationTime } }
+      //   );
+
+      //   return result?.n > 0;
+      // }
+
+      // const currentDate = new Date();
+
+      // if (foundedTrade?.expirationTime < currentDate) {
+      //   return new Error("This offer has been expired");
+      // }
+
+      // if (!expirationTime) {
+      //   expirationTime = foundedTrade?.expirationTime;
+      // }
+      // console.log("founded trade is ", foundedTrade);
+
+      // let owner = await Ownership.findOne({
+      //   ownerId: userId,
+      //   productId: decodedProductId,
+      // });
+      // let sum = owner?.amount + owner?.unitsEscrow;
+      // if (area > sum)
+      //   return new Error("Your offer exceeds total amount you own");
+
+      // let unitsToUpdate = area - owner.unitsEscrow;
+
+      // let { result } = await Trades.updateOne(
+      //   {
+      //     _id: ObjectID.ObjectId(decodedTradeId),
+      //     createdBy: userId,
+      //     completionStatus: { $ne: "completed" },
+      //   },
+      //   { $set: { price, area, minQty, expirationTime } }
+      // );
+      // if (result?.n > 0 && foundedTrade?.tradeType === "offer") {
+      //   await Ownership.update(
+      //     {
+      //       ownerId: userId,
+      //       productId: decodedProductId,
+      //     },
+      //     { $inc: { amount: -unitsToUpdate, unitsEscrow: unitsToUpdate } }
+      //   );
+      // } else if (result?.n > 0 && foundedTrade?.tradeType === "bid") {
+      //   await Accounts.update(
+      //     {
+      //       _id: userId,
+      //     },
+      //     {
+      //       $inc: {
+      //         "wallets.amount": -unitsToUpdate,
+      //         "wallets.escrow": unitsToUpdate,
+      //       },
+      //     }
+      //   );
+      // }
+
+      // return result?.n > 0;
     } catch (err) {
       return err;
     }
