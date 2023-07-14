@@ -274,12 +274,13 @@ export default {
       const { Ownership } = collections;
       const { productId, searchQuery, shopId, ...connectionArgs } = args;
       const decodedShopId = decodeOpaqueId(shopId).id;
-
+      console.log("auth Token is ", { authToken, userId });
       if (!userId || !authToken)
         throw new ReactionError("access-denied", "Access Denied");
-      let selector = {};
+
+      // let selector = {};
       await context.validatePermissions("reaction:legacy:products", "read", {
-        shopId,
+        shopId: decodeOpaqueId(shopId).id,
       });
 
       const decodedProductId = decodeOpaqueId(productId).id;
