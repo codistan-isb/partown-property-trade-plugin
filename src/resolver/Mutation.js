@@ -1023,6 +1023,9 @@ export default {
       if (res.expirationTime < current) {
         return new Error("This offer has been expired");
       }
+      if (res?.isCancelled === true) {
+        return new Error("This trade has already been cancelled");
+      }
 
       const rates = await ProductRate.findOne({ productType: propertyType });
 
@@ -1080,8 +1083,12 @@ export default {
 
   //validate property active/deletion status
   //for buy trade:
-  //if price new => validate user wallet => update price
-  //if quantity new => check max units of property => update quantity
+  //if price new => validate user wallet => update price => update wallet
+
+  // if quantity new => check max units of property => if(price) =>
+  // check wallet against new price (else) check against old price => update wallet amount and escrow accordingly =>
+  //  update quantity
+
   //if date new => check the date is not in the past => update date
 
   //for sell type trade:
@@ -1092,7 +1099,7 @@ export default {
   async editTrade(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
-      const { Trades, Ownership, Catalog, Accounts } = collections;
+      const { Trades, Ownership, Catalog, Accounts, ProductRate } = collections;
 
       const {
         productId,
@@ -1135,17 +1142,11 @@ export default {
       console.log("founded trade is ", foundedTrade);
       //buy type trade
       if (foundedTrade?.tradeType === "bid") {
-        const amountToCheck = price * area;
-        // const expiry = new Date(expirationTime);
-        // const expiryOld = new Date(expirationTime);
-
         if (expirationTime) {
           updatedFields["expirationTime"] = expirationTime;
         }
-        if (foundedTrade?.price !== price) {
-          await checkUserWallet(collections, userId, amountToCheck);
-          updatedFields["price"] = price;
-        }
+
+        // checks if trade area exceeds total area of the property
         if (foundedTrade?.area !== area) {
           const { product } = await Catalog.findOne({
             "product._id": foundedTrade?.productId,
@@ -1157,6 +1158,64 @@ export default {
             );
           updatedFields["area"] = area;
         }
+
+        const { buyerFee } = await ProductRate.findOne({
+          productType: product?.propertySaleType?.type,
+        });
+
+        let newAmountToCheck = price * area;
+        let newPercentage = (newAmountToCheck / 100) * buyerFee;
+        newAmountToCheck = newAmountToCheck + newPercentage;
+
+        let oldAmount = foundedTrade?.price * foundedTrade?.area;
+        let oldPercentage = (oldAmount / 100) * buyerFee;
+        oldAmount = oldAmount + oldPercentage;
+
+        console.log("buyer fee", buyerFee);
+        console.log("new amount is ", newAmountToCheck);
+        console.log("old amount is ", oldAmount);
+
+        // console.log("amount to check is ", amountToCheck);
+
+        // const expiry = new Date(expirationTime);
+        // const expiryOld = new Date(expirationTime);
+
+        await checkUserWallet(collections, userId, newAmountToCheck);
+        let amountChange = 0;
+        let escrowChange = 0;
+        const currentEscrow = foundedTrade?.price;
+
+        if (newAmountToCheck > oldAmount) {
+          console.log("new price is greater than old one");
+
+          amountChange = newAmountToCheck - oldAmount;
+          escrowChange = amountChange;
+          amountChange = -amountChange;
+
+          console.log("amount change", amountChange);
+          console.log("escrow change", escrowChange);
+        }
+        if (newAmountToCheck < oldAmount) {
+          console.log("old price is greater than new one");
+          amountChange = oldAmount - newAmountToCheck;
+          amountChange = +amountChange;
+          escrowChange = -amountChange;
+
+          console.log("amount change", amountChange);
+          console.log("escrow change", escrowChange);
+        }
+
+        updatedFields["price"] = price;
+
+        await Accounts.updateOne(
+          { _id: userId },
+          {
+            $inc: {
+              "wallets.amount": amountChange,
+              "wallets.escrow": escrowChange,
+            },
+          }
+        );
 
         console.log("updated fields are ", updatedFields);
       }

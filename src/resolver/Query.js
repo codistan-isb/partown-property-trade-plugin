@@ -110,7 +110,13 @@ export default {
   },
   async getUserProperties(
     parent,
-    { accountId, searchQuery, ...connectionArgs },
+    {
+      accountId,
+      searchQuery,
+      propertySaleType,
+      propertyType,
+      ...connectionArgs
+    },
     context,
     info
   ) {
@@ -125,29 +131,56 @@ export default {
         idToUse = accountId;
       }
 
-      let filter = {
-        ownerId: decodeOpaqueId(idToUse).id,
-      };
+      const ownerId = decodeOpaqueId(idToUse).id;
+      let filter = [];
+      // Add the initial condition for ownerId
+      filter.push({ ownerId });
 
+      // Check if searchQuery is provided
       if (searchQuery) {
-        filter.productId = {
-          $in: await collections.Catalog.distinct("product._id", {
-            "product.title": { $regex: searchQuery, $options: "i" },
-          }),
-        };
+        // Add the condition for searchQuery
+        filter.push({
+          productId: {
+            $in: await collections.Catalog.distinct("product._id", {
+              "product.title": { $regex: searchQuery, $options: "i" },
+            }),
+          },
+        });
       }
 
-      console.log("catalog is ", filter);
+      //Add property sale type to condition
+      if (propertySaleType) {
+        filter.push({
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.propertySaleType.type": propertySaleType,
+            }),
+          },
+        });
+      }
 
-      filter.productId = {
-        $in: await Catalog.distinct("product._id", {
-          "product.isVisible": { $ne: false },
-        }),
-      };
+      //Add property type to condition
+      if (propertyType) {
+        filter.push({
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.propertyType": propertyType,
+            }),
+          },
+        });
+      }
 
+      // Add the condition for product.isVisible
+      filter.push({
+        productId: {
+          $in: await Catalog.distinct("product._id", {
+            "product.isVisible": { $ne: false },
+          }),
+        },
+      });
       console.log("filter is ", filter);
 
-      let ownerProperties = Ownership.find(filter);
+      let ownerProperties = Ownership.find({ $and: filter });
 
       return getPaginatedResponse(ownerProperties, connectionArgs, {
         includeHasNextPage: wasFieldRequested("pageInfo.hasNextPage", info),
@@ -163,7 +196,7 @@ export default {
   },
   async myTrades(
     parent,
-    { filter, searchQuery, ...connectionArgs },
+    { filter, searchQuery, propertySaleType, propertyType, ...connectionArgs },
     context,
     info
   ) {
@@ -174,34 +207,58 @@ export default {
       console.log("user id is", userId);
       if (!authToken || !userId) return new Error("Unauthorized");
 
-      let matchStage = {
-        createdBy: userId,
-        isDisabled: { $ne: true },
-        isCancelled: { $ne: true },
-      };
+      let matchStage = [];
+
+      matchStage.push({ createdBy: userId });
+      matchStage.push({ isDisabled: { $ne: true } });
+      matchStage.push({ isCancelled: { $ne: true } });
 
       if (filter) {
-        matchStage.completionStatus = filter;
+        matchStage.push({ completionStatus: filter });
       }
 
-      matchStage.productId = {
-        $in: await Catalog.distinct("product._id", {
-          "product.isVisible": { $ne: false },
-        }),
-      };
+      matchStage.push({
+        productId: {
+          $in: await Catalog.distinct("product._id", {
+            "product.isVisible": { $ne: false },
+          }),
+        },
+      });
 
       if (searchQuery) {
-        console.log("coming to in search query", searchQuery);
-        matchStage.productId = {
-          $in: await Products.distinct("_id", {
-            title: { $regex: searchQuery, $options: "i" },
-          }),
-        };
+        matchStage.push({
+          productId: {
+            $in: await Products.distinct("_id", {
+              title: { $regex: searchQuery, $options: "i" },
+            }),
+          },
+        });
       }
 
-      console.log("matchstate is ", matchStage);
+      if (propertySaleType) {
+        matchStage.push({
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.propertySaleType.type": propertySaleType,
+            }),
+          },
+        });
+      }
 
-      let allTrades = Trades.find(matchStage);
+      //Add property type to condition
+      if (propertyType) {
+        matchStage.push({
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.propertyType": propertyType,
+            }),
+          },
+        });
+      }
+
+      console.log("match stage is  is ", matchStage);
+
+      let allTrades = Trades.find({ $and: matchStage });
 
       console.log("my trades using match stage", allTrades);
 

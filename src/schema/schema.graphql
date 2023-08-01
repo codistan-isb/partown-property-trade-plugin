@@ -401,6 +401,11 @@ extend type Query {
   getTradesForProperty(productId: String!, type: tradeTypeEnum): [trade]
   myTrades(
     filter: completionStatusEnum
+
+    propertySaleType: String
+
+    propertyType: String
+
     searchQuery: String
     "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
     after: ConnectionCursor
@@ -428,6 +433,10 @@ extend type Query {
     accountId: ID
 
     searchQuery: String
+
+    propertySaleType: String
+
+    propertyType: String
 
     "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
     after: ConnectionCursor
