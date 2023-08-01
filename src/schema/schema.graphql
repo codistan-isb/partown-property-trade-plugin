@@ -402,6 +402,8 @@ extend type Query {
   myTrades(
     filter: completionStatusEnum
 
+    location: String
+
     propertySaleType: String
 
     propertyType: String
@@ -433,6 +435,8 @@ extend type Query {
     accountId: ID
 
     searchQuery: String
+
+    location: String
 
     propertySaleType: String
 

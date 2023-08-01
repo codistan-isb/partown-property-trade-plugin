@@ -115,6 +115,7 @@ export default {
       searchQuery,
       propertySaleType,
       propertyType,
+      location,
       ...connectionArgs
     },
     context,
@@ -143,6 +144,16 @@ export default {
           productId: {
             $in: await collections.Catalog.distinct("product._id", {
               "product.title": { $regex: searchQuery, $options: "i" },
+            }),
+          },
+        });
+      }
+
+      if (location) {
+        filter.push({
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.location.state": location,
             }),
           },
         });
@@ -196,7 +207,14 @@ export default {
   },
   async myTrades(
     parent,
-    { filter, searchQuery, propertySaleType, propertyType, ...connectionArgs },
+    {
+      filter,
+      searchQuery,
+      propertySaleType,
+      propertyType,
+      location,
+      ...connectionArgs
+    },
     context,
     info
   ) {
@@ -234,6 +252,18 @@ export default {
           },
         });
       }
+
+      if (location) {
+        matchStage.push({
+          productId: {
+            $in: await Catalog.distinct("product._id", {
+              "product.location.state": location,
+            }),
+          },
+        });
+      }
+
+      // filters for property sale type
 
       if (propertySaleType) {
         matchStage.push({
