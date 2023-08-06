@@ -191,6 +191,7 @@ type OwnershipOutput {
 enum VoteTypeEnum {
   UPVOTE
   DOWNVOTE
+  NONE
 }
 
 type Vote {
@@ -402,11 +403,11 @@ extend type Query {
   myTrades(
     filter: completionStatusEnum
 
-    location: String
+    location: [String]
 
     propertySaleType: String
 
-    propertyType: String
+    propertyType: [String]
 
     searchQuery: String
     "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
@@ -436,11 +437,11 @@ extend type Query {
 
     searchQuery: String
 
-    location: String
+    location: [String]
 
     propertySaleType: String
 
-    propertyType: String
+    propertyType: [String]
 
     "Return only results that come after this cursor. Use this with `first` to specify the number of results to return."
     after: ConnectionCursor

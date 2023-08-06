@@ -143,17 +143,48 @@ export default {
         filter.push({
           productId: {
             $in: await collections.Catalog.distinct("product._id", {
-              "product.title": { $regex: searchQuery, $options: "i" },
+              $or: [
+                {
+                  "product.title": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.slug": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.location.country": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.location.state": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.location.location": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.propertyType": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+              ],
             }),
           },
         });
       }
 
-      if (location) {
+      if (location?.length) {
         filter.push({
           productId: {
             $in: await Catalog.distinct("product._id", {
-              "product.location.state": location,
+              "product.location.state": { $in: location },
             }),
           },
         });
@@ -171,11 +202,11 @@ export default {
       }
 
       //Add property type to condition
-      if (propertyType) {
+      if (propertyType?.length) {
         filter.push({
           productId: {
             $in: await Catalog.distinct("product._id", {
-              "product.propertyType": propertyType,
+              "product.propertyType": { $in: propertyType },
             }),
           },
         });
@@ -244,20 +275,52 @@ export default {
       });
 
       if (searchQuery) {
+        // Add the condition for searchQuery
         matchStage.push({
           productId: {
-            $in: await Products.distinct("_id", {
-              title: { $regex: searchQuery, $options: "i" },
+            $in: await collections.Catalog.distinct("product._id", {
+              $or: [
+                {
+                  "product.title": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.slug": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.location.country": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.location.state": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.location.location": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+                {
+                  "product.propertyType": {
+                    $regex: new RegExp(searchQuery, "i"),
+                  },
+                },
+              ],
             }),
           },
         });
       }
 
-      if (location) {
+      if (location?.length) {
         matchStage.push({
           productId: {
             $in: await Catalog.distinct("product._id", {
-              "product.location.state": location,
+              "product.location.state": { $in: location },
             }),
           },
         });
@@ -276,11 +339,11 @@ export default {
       }
 
       //Add property type to condition
-      if (propertyType) {
+      if (propertyType?.length) {
         matchStage.push({
           productId: {
             $in: await Catalog.distinct("product._id", {
-              "product.propertyType": propertyType,
+              "product.propertyType": { $in: propertyType },
             }),
           },
         });
