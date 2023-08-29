@@ -22,6 +22,7 @@ import sendDividendNotification from "../util/sendDividendNotification.js";
 import checkTrusteeWallet from "../util/checkTrusteeWallet.js";
 import ReactionError from "@reactioncommerce/reaction-error";
 import addDividendAmount from "../util/addDividendAmount.js";
+import calculateSellerEscrowDeduction from "../util/calculateSellerEscrowDeduction.js";
 export default {
   async createTradePrimary(parent, args, context, info) {
     try {
@@ -40,8 +41,15 @@ export default {
       } = args.input;
       let { authToken, userId, collections } = context;
 
-      let { Transactions, Accounts, Catalog, Products, Trades, Ownership } =
-        collections;
+      let {
+        Transactions,
+        Accounts,
+        Catalog,
+        Products,
+        Trades,
+        Ownership,
+        ProductRate,
+      } = collections;
 
       if (!authToken || !userId) return new Error("Unauthorized");
       // await sendEmailOrPhoneNotification(
@@ -91,6 +99,20 @@ export default {
           `You own ${checkOwnerExist?.amount} sqm for this property, you cannot sell more than that`
         );
 
+      const rates = await ProductRate.findOne({
+        productType: "Primary",
+      });
+
+      const sellerFee = rates?.sellerFee
+        ? (rates.sellerFee / 100) * price * area
+        : 0;
+
+      const buyerFee = rates?.buyerFee
+        ? (rates.buyerFee / 100) * price * area
+        : 0;
+
+      await checkUserWallet(collections, decodedSellerId, sellerFee);
+
       let decodedId = decodeOpaqueId(productId).id;
 
       if (product?.propertySaleType?.type !== "Primary")
@@ -132,6 +154,8 @@ export default {
         completionStatus: "inProgress",
         isDisabled: false,
         createdBy: decodeOpaqueId(createdBy).id,
+        sellerFee: { fee: sellerFee, percentage: rates?.sellerFee },
+        buyerFee: { fee: buyerFee, percentage: rates?.buyerFee },
       };
 
       if (product?._id) {
@@ -142,6 +166,17 @@ export default {
             decodedSellerId,
             decodedProductId,
             area
+          );
+          await Accounts.updateOne(
+            {
+              _id: decodedSellerId,
+            },
+            {
+              $inc: {
+                "wallets.amount": -sellerFee,
+                "wallets.escrow": sellerFee,
+              },
+            }
           );
           return { _id: insertedId };
         }
@@ -188,6 +223,7 @@ export default {
 
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
+      const decodedSellerId = decodeOpaqueId(sellerId).id;
       const allOwners = await Ownership.find({
         productId: decodedProductId,
       }).toArray();
@@ -337,6 +373,13 @@ export default {
           updatedAt: new Date(),
         });
 
+        await calculateSellerEscrowDeduction(
+          collections,
+          decodedSellerId,
+          decodedTradeId,
+          price
+        );
+
         //verified whether all units of the seller are sold
         await removeOwnership(collections, sellerId, productId);
 
@@ -424,8 +467,10 @@ export default {
 
       if (!authToken || !userId) throw new Error("Unauthorized");
 
+      //check whether user is permitted to trade
       await validateUser(context, userId);
 
+      //if no expiry time is provided, set default 1 week from current date
       if (!expirationTime) {
         const currentDate = new Date();
         expirationTime = new Date(
@@ -445,13 +490,19 @@ export default {
       });
 
       if (!product?.activeStatus || product?.activeStatus === false) {
-        return new Error("This property has been removed from the market");
+        return new Error("This property has been removed from the marketplace");
       }
 
       const rates = await ProductRate.findOne({ productType: "Resale" });
+
+      // calculate the buyer and seller fee against the trade value
       const buyerFee = rates?.buyerFee
         ? (rates.buyerFee / 100) * price * area
         : 0;
+      const sellerFee = rates?.sellerFee
+        ? (rates.sellerFee / 100) * price * area
+        : 0;
+
       const totalAmount = price * area + buyerFee;
 
       if (tradeType === "offer" && !ownerRes)
@@ -466,8 +517,14 @@ export default {
         throw new Error(`You cannot sell more than ${ownerRes?.amount} units`);
       }
 
+      //if the user is trying to purchase units, validate user wallet
       if (tradeType === "bid") {
         await checkUserWallet(collections, userId, totalAmount);
+      }
+
+      if (tradeType === "offer") {
+        //checking seller wallet whehter the seller has enough amount to compensate seller fee for trade
+        await checkUserWallet(collections, userId, sellerFee);
       }
 
       if (!product) {
@@ -504,6 +561,8 @@ export default {
         isDisabled: false,
         createdAt,
         updatedAt: createdAt,
+        buyerFee: { fee: buyerFee, percentage: rates?.buyerFee },
+        sellerFee: { fee: sellerFee, percentage: rates?.sellerFee },
       };
 
       const { insertedId } = await Trades.insertOne(data);
@@ -511,11 +570,12 @@ export default {
       if (!insertedId) throw new Error("Error creating Trade");
 
       if (buyerId) {
+        // transfer total Trade value from user's wallet to escrow
         await Accounts.updateOne(
           { _id: decodeOpaqueId(buyerId).id },
           {
             $inc: {
-              "wallets.amount": -1 * totalAmount,
+              "wallets.amount": -totalAmount,
               "wallets.escrow": totalAmount,
             },
           }
@@ -526,6 +586,17 @@ export default {
           decodeOpaqueId(sellerId).id,
           decodedProductId,
           area
+        );
+
+        // transfer seller fee from user's wallet to escrow
+        await Accounts.updateOne(
+          { _id: decodeOpaqueId(sellerId).id },
+          {
+            $inc: {
+              "wallets.amount": -1 * sellerFee,
+              "wallets.escrow": sellerFee,
+            },
+          }
         );
       }
 
@@ -765,6 +836,8 @@ export default {
           updateWallet(collections, decodedSellerId, netSellerPrice),
 
           updateWallet(collections, decodedManagerId, buyerFee),
+
+          //needs updation
           updateWallet(
             collections,
             decodeOpaqueId(process.env.ADMIN_ID).id,
@@ -772,6 +845,15 @@ export default {
           ),
           updateTradeUnits(collections, decodedTradeId, -units, minQty),
         ]);
+
+        //we are deducting the escrow amount from seller wallet, this should also update the seller fee in the trade record.
+        await calculateSellerEscrowDeduction(
+          collections,
+          decodedSellerId,
+          decodedTradeId,
+          price
+        );
+
         await closeTrade(collections, decodedTradeId);
         await createTradeTransaction(context, {
           amount: netBuyerPrice,
@@ -967,6 +1049,7 @@ export default {
 
       console.log("product is ", product);
 
+      // meant for developer, in actuality, properties other than pre-market do not require voting
       if (product?.propertySaleType?.type !== "Premarket")
         return new Error("Property is not in the pre-market stage");
 
@@ -983,6 +1066,19 @@ export default {
           userId,
         },
       };
+      const { voteType: oldVoteType } = await Votes.findOne({
+        userId,
+        productId,
+      });
+
+      if (
+        (voteType !== "NONE" && oldVoteType === "UPVOTE") ||
+        oldVoteType === "DOWNVOTE"
+      ) {
+        // If the new vote is UPVOTE or DOWNVOTE, set the existing vote to NONE
+        update.$set.voteType = "NONE";
+      }
+
       const options = { upsert: true, returnOriginal: false };
       const { lastErrorObject } = await Votes.findOneAndUpdate(
         filter,
@@ -995,6 +1091,7 @@ export default {
       return err;
     }
   },
+
   async disableTrade(parent, { tradeId }, context, info) {
     try {
       const { authToken, userId, collections } = context;
@@ -1018,26 +1115,34 @@ export default {
 
       if (!userId || !authToken) return new Error("Unauthorized");
 
-      const res = await Trades.findOne({ _id: ObjectID.ObjectId(tradeId) });
+      const originalTrade = await Trades.findOne({
+        _id: ObjectID.ObjectId(tradeId),
+      });
+
+      console.log("original trade is ", originalTrade);
+
       const current = new Date();
-      if (res.expirationTime < current) {
+      if (originalTrade.expirationTime < current) {
         return new Error("This offer has been expired");
       }
-      if (res?.isCancelled === true) {
+      if (originalTrade?.isCancelled === true) {
         return new Error("This trade has already been cancelled");
       }
 
-      const rates = await ProductRate.findOne({ productType: propertyType });
+      // const rates = await ProductRate.findOne({ productType: propertyType });
 
-      let tradeType = res?.tradeType;
-      let area = res?.area;
-      let price = res?.price;
+      let tradeType = originalTrade?.tradeType;
+      let area = originalTrade?.area;
+      let price = originalTrade?.price;
       let initial = area * price;
 
-      let buyerFee = (rates.buyerFee / 100) * initial;
+      let buyerFee = originalTrade?.buyerFee?.fee;
+      let sellerFee = originalTrade?.sellerFee?.fee;
       let total = initial + buyerFee;
 
-      let productId = res?.productId;
+      let productId = originalTrade?.productId;
+
+      console.log("seller Fee is ", sellerFee);
 
       // return null;
 
@@ -1061,6 +1166,16 @@ export default {
               productId: decodeOpaqueId(productId).id,
             },
             { $inc: { unitsEscrow: -area, amount: area } }
+          );
+
+          await Accounts.updateOne(
+            { _id: userId },
+            {
+              $inc: {
+                "wallets.escrow": -sellerFee,
+                "wallets.amount": sellerFee,
+              },
+            }
           );
         } else if (tradeType === "bid") {
           await Accounts.updateOne(
@@ -1096,6 +1211,7 @@ export default {
   //if quantity less than previous => transfer amount from unitEscrow to ownership
   //if quantity greater than previous => validate ownership => transfer units from ownerShip to unitEscrow
   //if date new => check the date is not in the past => update date
+  //if price changes => update previous seller Fee
   async editTrade(parent, args, context, info) {
     try {
       const { authToken, userId, collections } = context;
@@ -1115,42 +1231,80 @@ export default {
         cancellationReason,
       } = args.input;
 
-      if (minQty > area) {
-        return new Error("Minimum Quantity cannot be more greater");
-      }
+      // check if user is logged in
+      if (!userId || !authToken)
+        throw new ReactionError("access-denied", "Access Denied");
 
       let decodedProductId = decodeOpaqueId(productId).id;
       let decodedTradeId = decodeOpaqueId(args.tradeId).id;
-      let updatedFields = {
-        minQty,
-      };
-      if (!userId || !authToken) return new Error("Unauthorized");
+
+      // product against which trade/offer is created
       const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
 
+      //verify whether the product is active
       if (product?.activeStatus === false || product?.isVisible === false)
         return new Error(
           "This property have been removed from the marketplace"
         );
 
+      //find original trade/offer
       let foundedTrade = await Trades.findOne({
         _id: ObjectID.ObjectId(decodedTradeId),
         createdBy: userId,
       });
 
-      console.log("founded trade is ", foundedTrade);
-      //buy type trade
+      let { wallets } = await Accounts.findOne({
+        _id: userId,
+      });
+
+      const originalWalletAmount = wallets.amount;
+      const originalEscrowAmount = wallets.escrow;
+
+      console.log("original wallet amount", originalWalletAmount);
+      console.log("original escrow amount", originalEscrowAmount);
+
+      let updatedFields = {};
+
+      console.log("original trade  ", foundedTrade);
+
+      console.log("new input values are ", args.input);
+
+      // original trade values
+      const originalPrice = parseFloat(foundedTrade.price);
+      const originalArea = parseFloat(foundedTrade.area);
+      const originalBuyerFeePercentage = foundedTrade.buyerFee.percentage;
+      const originalSellerFeePercentage = foundedTrade.sellerFee.percentage;
+
+      const originalSellerFeeValue = foundedTrade.sellerFee.fee;
+      const originalBuyerFeeValue = foundedTrade.buyerFee.fee;
+
+      const originalMinQty = foundedTrade.minQty;
+
+      //find current buyer fee and seller fee percentage
+      const { buyerFee, sellerFee } = await ProductRate.findOne({
+        productType: product?.propertySaleType?.type,
+      });
+
+      if (minQty > area) {
+        return new Error("Minimum Quantity cannot be more greater");
+      }
+
+      if (minQty !== originalMinQty) {
+        updatedFields["minQty"] = minQty;
+      }
+
+      // edit trade for a buy offer (bid)
       if (foundedTrade?.tradeType === "bid") {
+        console.log("trade type is bid");
         if (expirationTime) {
           updatedFields["expirationTime"] = expirationTime;
         }
 
         // checks if trade area exceeds total area of the property
-        if (foundedTrade?.area !== area) {
-          const { product } = await Catalog.findOne({
-            "product._id": foundedTrade?.productId,
-          });
+        if (originalArea !== area) {
+          console.log("original area check");
           const { area: propertyArea } = product;
           if (area > propertyArea?.value)
             return new Error(
@@ -1159,54 +1313,51 @@ export default {
           updatedFields["area"] = area;
         }
 
-        const { buyerFee } = await ProductRate.findOne({
-          productType: product?.propertySaleType?.type,
-        });
+        let newAmount = price * area;
+        let newPercentage = (newAmount / 100) * buyerFee;
+        newAmount = newAmount + newPercentage;
 
-        let newAmountToCheck = price * area;
-        let newPercentage = (newAmountToCheck / 100) * buyerFee;
-        newAmountToCheck = newAmountToCheck + newPercentage;
+        console.log("new amount 1", newAmount);
 
-        let oldAmount = foundedTrade?.price * foundedTrade?.area;
-        let oldPercentage = (oldAmount / 100) * buyerFee;
+        let oldAmount = originalPrice * originalArea;
+
+        let oldPercentage = (oldAmount / 100) * originalBuyerFeePercentage;
         oldAmount = oldAmount + oldPercentage;
 
-        console.log("buyer fee", buyerFee);
-        console.log("new amount is ", newAmountToCheck);
-        console.log("old amount is ", oldAmount);
+        console.log("old amount 1", oldAmount);
 
-        // console.log("amount to check is ", amountToCheck);
-
-        // const expiry = new Date(expirationTime);
-        // const expiryOld = new Date(expirationTime);
-
-        await checkUserWallet(collections, userId, newAmountToCheck);
         let amountChange = 0;
         let escrowChange = 0;
-        const currentEscrow = foundedTrade?.price;
+        const currentEscrow = originalPrice;
 
-        if (newAmountToCheck > oldAmount) {
-          console.log("new price is greater than old one");
+        // if the edited trade value is greater than the previous trade value
+        if (newAmount > oldAmount) {
+          //if the new amount is greater than the previous one, we will check whether the user has
+          //sufficient funds to edit their offer
 
-          amountChange = newAmountToCheck - oldAmount;
+          console.log("new amount is greater than old one");
+          amountChange = newAmount - oldAmount;
           escrowChange = amountChange;
           amountChange = -amountChange;
 
-          console.log("amount change", amountChange);
-          console.log("escrow change", escrowChange);
+          console.log("new amount is ", newAmount);
+          console.log("amount change is ", amountChange);
+          console.log("escrow change is ", escrowChange);
+
+          //checks the escrow change amount against the main wallet, in this scenario the escrow value is always positive
+          await checkUserWallet(collections, userId, escrowChange);
         }
-        if (newAmountToCheck < oldAmount) {
-          console.log("old price is greater than new one");
-          amountChange = oldAmount - newAmountToCheck;
+
+        // if the edited trade value is less than the previous trade value
+        if (newAmount < oldAmount) {
+          amountChange = oldAmount - newAmount;
           amountChange = +amountChange;
           escrowChange = -amountChange;
-
-          console.log("amount change", amountChange);
-          console.log("escrow change", escrowChange);
         }
 
         updatedFields["price"] = price;
 
+        // update the user wallet and escrow based on new trade value
         await Accounts.updateOne(
           { _id: userId },
           {
@@ -1216,59 +1367,83 @@ export default {
             },
           }
         );
-
-        console.log("updated fields are ", updatedFields);
       }
 
+      // for sell offer/trade
       if (foundedTrade?.tradeType === "offer") {
         if (expirationTime) {
           updatedFields["expirationTime"] = expirationTime;
         }
-        if (price !== foundedTrade?.price) {
+
+        if (area !== originalArea) {
+          if (area > product?.area?.value) {
+            return new Error(
+              "area cannot be greater than the total area of the property"
+            );
+          }
+          updatedFields["area"] = area;
+        }
+
+        // if (area !== originalArea && area < originalArea) {
+        //   console.log("condition 1");
+        //   const { result } = await Ownership.updateOne(
+        //     {
+        //       productId: tradeType?.productId,
+        //       ownerId: userId,
+        //     },
+        //     {
+        //       $inc: { unitsEscrow: -area, amount: +area },
+        //     }
+        //   );
+        //   console.log("result 1 ", result);
+        //   if (result?.n > 0) {
+        //     updatedFields["quantity"] = quantity;
+        //   }
+        // }
+
+        // if (area !== originalArea && area > originalArea) {
+        //   console.log("condition 2");
+        //   //validate ownership
+        //   const res = await Ownership.findOne({
+        //     ownerId: userId,
+        //     productId: foundedTrade?.productId,
+        //   });
+
+        //   const unitsEscrow = res?.unitsEscrow ? res?.unitsEscrow : 0;
+        //   const ownedAmount = res?.amount + unitsEscrow;
+
+        //   if (ownedAmount < area) {
+        //     return new Error("You cannot sell more than what you own");
+        //   }
+
+        //   const { result } = await Ownership.updateOne(
+        //     {
+        //       productId: tradeType?.productId,
+        //       ownerId: userId,
+        //     },
+        //     {
+        //       $inc: { amount: +amount, unitsEscrow: -amount },
+        //     }
+        //   );
+        //   console.log("result 2 ", result);
+        //   if (result?.n > 0) {
+        //     updatedFields["quantity"] = quantity;
+        //   }
+        // }
+
+        if (price !== originalPrice) {
+          // updated seller fee goes here
+          const newPrice = area * price;
+          let newFee = newPrice * (sellerFee / 100);
+          let feeToUpdate = originalSellerFeeValue - newFee;
+          let absoluteFee = Math.abs(feeToUpdate);
+
+          await checkUserWallet(collections, userId, absoluteFee);
+
+          console.log("absolute fee is ", absoluteFee);
+          updatedFields["sellerFee.fee"] = absoluteFee;
+
           updatedFields["price"] = price;
-        }
-        if (area !== foundedTrade?.area && area < foundedTrade?.quantity) {
-          const { result } = await Ownership.updateOne(
-            {
-              productId: tradeType?.productId,
-              ownerId: userId,
-            },
-            {
-              $inc: { unitsEscrow: -amount, amount: +amount },
-            }
-          );
-          console.log("result 1 ", result);
-          if (result?.n > 0) {
-            updatedFields["quantity"] = quantity;
-          }
-        }
-        if (area !== foundedTrade?.area && area > foundedTrade?.quantity) {
-          //validate ownership
-          const res = await Ownership.findOne({
-            ownerId: userId,
-            productId: foundedTrade?.productId,
-          });
-
-          const unitsEscrow = res?.unitsEscrow ? res?.unitsEscrow : 0;
-          const ownedAmount = res?.amount + unitsEscrow;
-
-          if (ownedAmount < area) {
-            return new Error("You cannot sell more than what you own");
-          }
-
-          const { result } = await Ownership.updateOne(
-            {
-              productId: tradeType?.productId,
-              ownerId: userId,
-            },
-            {
-              $inc: { amount: +amount, unitsEscrow: -amount },
-            }
-          );
-          console.log("result 2 ", result);
-          if (result?.n > 0) {
-            updatedFields["quantity"] = quantity;
-          }
         }
       }
 
@@ -1282,72 +1457,6 @@ export default {
       );
 
       return result?.n > 0;
-
-      // if (foundedTrade?.price === price) {
-      //   let { result } = await Trades.updateOne(
-      //     {
-      //       _id: ObjectID.ObjectId(decodedTradeId),
-      //       createdBy: userId,
-      //       completionStatus: { $ne: "completed" },
-      //     },
-      //     { $set: { price, area, minQty, expirationTime } }
-      //   );
-
-      //   return result?.n > 0;
-      // }
-
-      // const currentDate = new Date();
-
-      // if (foundedTrade?.expirationTime < currentDate) {
-      //   return new Error("This offer has been expired");
-      // }
-
-      // if (!expirationTime) {
-      //   expirationTime = foundedTrade?.expirationTime;
-      // }
-      // console.log("founded trade is ", foundedTrade);
-
-      // let owner = await Ownership.findOne({
-      //   ownerId: userId,
-      //   productId: decodedProductId,
-      // });
-      // let sum = owner?.amount + owner?.unitsEscrow;
-      // if (area > sum)
-      //   return new Error("Your offer exceeds total amount you own");
-
-      // let unitsToUpdate = area - owner.unitsEscrow;
-
-      // let { result } = await Trades.updateOne(
-      //   {
-      //     _id: ObjectID.ObjectId(decodedTradeId),
-      //     createdBy: userId,
-      //     completionStatus: { $ne: "completed" },
-      //   },
-      //   { $set: { price, area, minQty, expirationTime } }
-      // );
-      // if (result?.n > 0 && foundedTrade?.tradeType === "offer") {
-      //   await Ownership.update(
-      //     {
-      //       ownerId: userId,
-      //       productId: decodedProductId,
-      //     },
-      //     { $inc: { amount: -unitsToUpdate, unitsEscrow: unitsToUpdate } }
-      //   );
-      // } else if (result?.n > 0 && foundedTrade?.tradeType === "bid") {
-      //   await Accounts.update(
-      //     {
-      //       _id: userId,
-      //     },
-      //     {
-      //       $inc: {
-      //         "wallets.amount": -unitsToUpdate,
-      //         "wallets.escrow": unitsToUpdate,
-      //       },
-      //     }
-      //   );
-      // }
-
-      // return result?.n > 0;
     } catch (err) {
       return err;
     }
@@ -1426,23 +1535,25 @@ export default {
       return err;
     }
   },
+
   async removeOwner(parent, { ownershipId }, context, info) {
     try {
       const { userId, authToken, collections } = context;
       const { Catalog, Ownership } = collections;
 
-      const { amount, productId } = await Ownership.findOne({
+      const { amount, productId, unitsEscrow } = await Ownership.findOne({
         _id: ObjectID.ObjectId(ownershipId),
       });
 
-      const { product } = await Catalog.findOne({
-        "product._id": productId,
-      });
+      // const { product } = await Catalog.findOne({
+      //   "product._id": productId,
+      // });
 
-      if (product?.area?.availableQuantity !== amount)
+      if (unitsEscrow !== 0) {
         return new Error(
           "Cannot remove this user as owner, this user has already opened their units up for trading."
         );
+      }
 
       let { result: removedOwner } = await Ownership.deleteOne({
         _id: ObjectID.ObjectId(ownershipId),

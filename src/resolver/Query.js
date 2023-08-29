@@ -35,6 +35,8 @@ export default {
       console.log("user id is", userId);
       let decodedId = decodeOpaqueId(productId).id;
 
+      console.log("decoded product Id ", decodedId);
+
       let tradeResults = [];
       if (type) {
         tradeResults = await Trades.find({
