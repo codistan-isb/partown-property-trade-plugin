@@ -651,6 +651,7 @@ export default {
 
       const propertyTitle = product?.title;
       const slug = product?.slug;
+      const units = product?.area?.value
       //ownership assigned notification to owner
       await sendOwnershipAssignedNotification(
         context,
