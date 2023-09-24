@@ -27,6 +27,8 @@ export default async function tradeNotification(
   let firstName = _.get(account, "profile.firstName");
   let lastName = _.get(account, "profile.lastName");
 
+  let phoneNumber = _.get(account, "profile.phone");
+
   // validate whether the user has enabled notifications services for their account or not
   const hasEnabledEmailNotification = _.get(
     account,
