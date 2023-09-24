@@ -12,8 +12,6 @@ export default async function calculateSellerEscrowDeduction(
     _id: ObjectID.ObjectId(tradeId),
   });
 
-  console.log("trade in seller escrow", trade);
-
   const sellerFeeForCurrentTradeValue =
     tradePrice * (trade.sellerFee.percentage / 100);
 

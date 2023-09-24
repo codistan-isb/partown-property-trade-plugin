@@ -31,6 +31,6 @@ export default async function sendPhoneNotification(phoneNumber, body) {
     return true;
   } catch (err) {
     console.log(err);
-    throw err;
+    return false;
   }
 }

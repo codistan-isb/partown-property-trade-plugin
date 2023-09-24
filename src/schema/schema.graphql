@@ -381,6 +381,13 @@ extend type Mutation {
 
   #test signe url generation
   generateSignedUrlTest(url: String): String
+
+  #property event email
+  sendPropertyEventNotification(
+    productId: ID!
+    eventTitle: String!
+    eventDetails: String
+  ): Boolean
 }
 
 enum NotificationsSortByField {
@@ -546,7 +553,7 @@ extend type Query {
 
     "By default, groups are sorted by when they were created, oldest first. Set this to sort by one of the other allowed fields"
     sortBy: NotificationsSortByField = timeSent
-  ): NotificationConnection!
+  ): NotificationConnection
 }
 
 extend type Subscription {

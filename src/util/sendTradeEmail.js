@@ -6,38 +6,39 @@ export default async function sendTradeEmail(
   context,
   propertyTitle,
   units,
-  email,
-  fullName,
-  profileImage,
-  propertyImage,
-  propertyUrl
+  price,
+  propertyUrl,
+  description,
+  firstName,
+  lastName,
+  email
 ) {
   const {
     collections: { Accounts, Shops },
   } = context;
-
-  console.log("*******in trade email", propertyImage);
 
   const bodyTemplate = "transaction/success";
 
   const shop = await Shops.findOne({ shopType: "primary" });
   if (!shop) throw new ReactionError("not-found", "Shop not found");
 
-  console.log("buyer image is ", profileImage);
+  const currentYear = new Date().getFullYear();
+  const facebook = process.env.FACEBOOK;
+  const instagram = process.env.INSTAGRAM;
+  const twitter = process.env.TWITTER;
 
-  const logoImage = "https://i.imgur.com/xgJX3WK.jpeg";
   const dataForEmail = {
     propertyTitle,
-    profileImage: await generateSignedUrl(profileImage),
-    propertyImage: await generateSignedUrl(propertyImage),
-    contactEmail: _.get(shop, "emails[0].address"),
-    buyerName: fullName,
-    units,
-    logoImage,
+    firstName,
+    lastName,
+    description,
+    unitsQuantity: units,
+    price,
     propertyUrl,
-    website: "https://dev.partown.co/",
-    email: "dev@partown.co",
-    linkedIn: "https://linkedin.com/",
+    currentYear,
+    facebook,
+    twitter,
+    instagram,
   };
 
   const language = shop.language;

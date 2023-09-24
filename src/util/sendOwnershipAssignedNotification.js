@@ -6,13 +6,12 @@ async function sendDividendEmail(
   firstName,
   lastName,
   description,
-  awardedBy,
   propertyTitle,
-  amount,
+  units,
   slug
 ) {
   const { Shops } = context.collections;
-  const bodyTemplate = "dividend/awarded";
+  const bodyTemplate = "property/ownership";
 
   const shop = await Shops.findOne({ shopType: "primary" });
   if (!shop) throw new ReactionError("not-found", "Shop not found");
@@ -26,9 +25,8 @@ async function sendDividendEmail(
     firstName,
     lastName,
     description,
-    awardedBy,
     propertyTitle,
-    amount,
+    units,
     propertyLink,
     facebook: process.env.FACEBOOK,
     twitter: process.env.TWITTER,
@@ -47,14 +45,13 @@ async function sendDividendEmail(
   });
 }
 
-export default async function sendDividendNotification(
+export default async function sendOwnershipAssignedNotification(
   context,
   accountId,
-  managerName,
   messageHeader,
   messageBody,
   propertyTitle,
-  amount,
+  units,
   description,
   slug
 ) {
@@ -67,6 +64,14 @@ export default async function sendDividendNotification(
   let phoneNumber = _.get(account, "profile.phone");
   let firstName = _.get(account, "profile.firstName");
   let lastName = _.get(account, "profile.lastName");
+
+  console.log(
+    "**************manager information is ***************",
+    email,
+    phoneNumber,
+    firstName,
+    lastName
+  );
 
   const hasEnabledEmailNotification = _.get(
     account,
@@ -90,9 +95,8 @@ export default async function sendDividendNotification(
       firstName,
       lastName,
       description,
-      managerName,
       propertyTitle,
-      amount,
+      units,
       slug
     );
   }

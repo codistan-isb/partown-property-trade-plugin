@@ -399,7 +399,8 @@ export default {
       const { authToken, userId, collections } = context;
       const { Notifications } = collections;
 
-      console.log("user id ", userId);
+      if (!userId) return;
+
       const { ...connectionArgs } = args;
 
       let allNotifications = Notifications.find({

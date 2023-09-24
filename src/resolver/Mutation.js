@@ -23,6 +23,9 @@ import checkTrusteeWallet from "../util/checkTrusteeWallet.js";
 import ReactionError from "@reactioncommerce/reaction-error";
 import addDividendAmount from "../util/addDividendAmount.js";
 import calculateSellerEscrowDeduction from "../util/calculateSellerEscrowDeduction.js";
+import propertyEventNotification from "../util/propertyEventNotification.js";
+import sendDividendPayoutNotification from "../util/sendDividendPayoutNotification.js";
+import sendOwnershipAssignedNotification from "../util/sendOwnershipAssignedNotification.js";
 export default {
   async createTradePrimary(parent, args, context, info) {
     try {
@@ -106,6 +109,8 @@ export default {
       const sellerFee = rates?.sellerFee
         ? (rates.sellerFee / 100) * price * area
         : 0;
+
+      console.log("seller fee is ", sellerFee);
 
       const buyerFee = rates?.buyerFee
         ? (rates.buyerFee / 100) * price * area
@@ -210,9 +215,10 @@ export default {
         "adminUIShopIds.0": { $ne: null, $exists: true },
       });
 
-      // console.log("admin account is ", adminAccount);
-
+      //function to check whether the trade is expired
       await checkTradeExpiry(collections, tradeId);
+
+      // function validate whether the user is eligible to subscribe to the property
       await validateUser(context, userId);
 
       let userAccount = await Accounts.findOne({ userId });
@@ -228,10 +234,8 @@ export default {
         productId: decodedProductId,
       }).toArray();
 
-      // const totalPrice = units * price;
       //current service charge service charge
       let rates = await ProductRate.findOne({ productType: "Primary" });
-
       let buyerFee = 0;
       let sellerFee = 0;
       if (rates?.buyerFee) {
@@ -245,20 +249,25 @@ export default {
         _id: userId,
       });
 
+      //function to check trade validity and trade completion
+      await validateMinQty(collections, decodedTradeId, units);
+
+      //function to check whether the subscriber/buyer has enough amount available in their wallet
       await checkUserWallet(
         collections,
         decodeOpaqueId(userId).id,
         price + buyerFee
       );
 
-      await validateMinQty(collections, decodedTradeId, units);
-
+      // we will find the property to get the manager/trustee id for that property
       const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
 
       const decodedManagerId = decodeOpaqueId(product?.manager).id;
 
+      /*  we will sum all the ownerships and validate against the total value of the property. 
+      If the sum is equal to the total value of the property, it means the property has been fully purchased */
       let sum = [];
       if (allOwners.length > 1) {
         sum = await Ownership.aggregate([
@@ -274,11 +283,7 @@ export default {
 
       let totalSum = sum[0]?.totalUnits;
 
-      // console.log("total sum is ", totalSum);
-
       if (totalSum === product?.area?.value) {
-        console.log("product?.area?.value", product?.area?.value);
-
         return new Error("This property has been fully subscribed");
       }
 
@@ -320,41 +325,39 @@ export default {
       const netBuyerPrice = price + buyerFee;
       const netSellerPrice = price - sellerFee;
       const netServiceCharge = buyerFee + sellerFee;
+
       if (lastErrorObject?.n > 0) {
         const { result } = await Ownership.update(
           { ownerId: decodeOpaqueId(sellerId).id, productId: decodedProductId },
           { $inc: { unitsEscrow: -units } }
         );
 
-        // update buyer funds
+        // update buyer funds after successful transaction
         await updateWallet(
           collections,
           decodeOpaqueId(userId).id,
           -netBuyerPrice
         );
 
-        // update seller funds
+        // update seller funds after successful transaction
         await updateWallet(
           collections,
           decodeOpaqueId(sellerId).id,
           netSellerPrice
         );
 
-        //update manager/trustee wallet
+        //update manager/trustee wallet after successful transaction
         await updateWallet(collections, decodedManagerId, buyerFee);
 
-        //update admin/platform funds
-        await updateWallet(
-          collections,
-          decodeOpaqueId(process.env.ADMIN_ID).id,
-          sellerFee
-        );
+        //update admin/platform funds after successful transaction
+        await updateWallet(collections, adminId, sellerFee);
 
-        // await updateAvailableQuantity(collections, decodedProductId, -units);
         await updateTradeUnits(collections, decodedTradeId, -units, minQty);
+
+        //if the trade units has been used completely after current transaction, the trade will be closed
         await closeTrade(collections, decodedTradeId);
 
-        // userTransactionId
+        // creates a transaction record against the user, this is to be moved to a global function for easier management
         await createTradeTransaction(context, {
           amount: netBuyerPrice,
           approvalStatus: "completed",
@@ -373,6 +376,7 @@ export default {
           updatedAt: new Date(),
         });
 
+        // calculate and deducts the amount to be deducted from the seller escrow, also updates the record for trade
         await calculateSellerEscrowDeduction(
           collections,
           decodedSellerId,
@@ -380,46 +384,45 @@ export default {
           price
         );
 
-        //verified whether all units of the seller are sold
+        /*verified whether all units of the seller are sold, if all of the units are sold, the seller is no longer the 
+        owner and as such should be removed from the owner collection */
         await removeOwnership(collections, sellerId, productId);
 
         //****buyer, seller, trustee, admin notification
         const productTitle = product?.title;
-        const productImage = product?.primaryImage?.URLs?.thumbnail;
-
-        console.log("*********product Image is", productImage);
-
         const productSlug = product?.slug;
+
         //buyer
         await tradeNotification(
           context,
           userId,
           productTitle,
           units,
-          "You",
-          productSlug
+          price,
+          productSlug,
+          "Congratulations, you have successfully purchased this property"
         );
 
         //seller
         await tradeNotification(
           context,
-          decodeOpaqueId(sellerId).id,
+          decodedSellerId,
           productTitle,
           units,
-          `${buyerProfile?.firstName} ${buyerProfile?.lastName}`,
-          productImage,
-          productSlug
+          price,
+          productSlug,
+          "Congratulations!, someone subscribed to your property."
         );
 
         //trustee
         await tradeNotification(
           context,
-          decodeOpaqueId(product?.manager).id, //manager/ trustee id
+          decodedManagerId,
           productTitle,
           units,
-          `${buyerProfile?.firstName} ${buyerProfile?.lastName}`,
-          productImage,
-          productSlug
+          price,
+          productSlug,
+          "A trade was successfully completed against the property you are managing"
         );
 
         //admin/platform
@@ -428,8 +431,7 @@ export default {
           adminId, //admin id
           productTitle,
           units,
-          `${buyerProfile?.firstName} ${buyerProfile?.lastName}`,
-          productImage,
+          price,
           productSlug
         );
 
@@ -646,6 +648,21 @@ export default {
       if (!ownerToFind) return new Error("User does not exist");
 
       const { result } = await Ownership.insertOne(data);
+
+      const propertyTitle = product?.title;
+      const slug = product?.slug;
+      //ownership assigned notification to owner
+      await sendOwnershipAssignedNotification(
+        context,
+        decodeOpaqueId(ownerId).id,
+        "Ownership To a new Property",
+        "You have been assigned ownership to a property",
+        propertyTitle,
+        units,
+        "You have been assigned ownership of a property",
+        slug
+      );
+
       if (result) {
         await updateAvailableQuantity(collections, id, -totalValue);
         return true;
@@ -715,6 +732,21 @@ export default {
         options
       );
       console.log("last error object", lastErrorObject);
+
+      const propertyTitle = product?.title;
+      const slug = product?.slug;
+      //ownership assigned notification to owner
+      await sendOwnershipAssignedNotification(
+        context,
+        decodeOpaqueId(ownerId).id,
+        "Ownership To a new Property",
+        "You have been assigned ownership to a property",
+        propertyTitle,
+        units,
+        "You have been assigned ownership of a property",
+        slug
+      );
+
       if (lastErrorObject?.n > 0) {
         await updateAvailableQuantity(collections, id, -units);
         return true;
@@ -746,13 +778,17 @@ export default {
       if (!authToken || !userId) return new Error("Unauthorized");
       await validateUser(context, userId);
 
+      const { _id: adminId } = await Accounts.findOne({
+        "adminUIShopIds.0": { $ne: null, $exists: true },
+      });
+
       const decodedBuyerId = decodeOpaqueId(buyerId).id;
       const decodedSellerId = decodeOpaqueId(sellerId).id;
       const decodedProductId = decodeOpaqueId(productId).id;
       const decodedTradeId = decodeOpaqueId(tradeId).id;
 
       console.log("decoded product id", decodedProductId);
-      const product = await Catalog.findOne({
+      const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
 
@@ -838,11 +874,7 @@ export default {
           updateWallet(collections, decodedManagerId, buyerFee),
 
           //needs updation
-          updateWallet(
-            collections,
-            decodeOpaqueId(process.env.ADMIN_ID).id,
-            sellerFee
-          ),
+          updateWallet(collections, adminId, sellerFee),
           updateTradeUnits(collections, decodedTradeId, -units, minQty),
         ]);
 
@@ -854,7 +886,6 @@ export default {
           price
         );
 
-        await closeTrade(collections, decodedTradeId);
         await createTradeTransaction(context, {
           amount: netBuyerPrice,
           approvalStatus: "completed",
@@ -872,6 +903,55 @@ export default {
           createdAt: new Date(),
           updatedAt: new Date(),
         });
+
+        await closeTrade(collections, decodedTradeId);
+
+        //****buyer, seller, trustee, admin notification
+        const productTitle = product?.title;
+        const productSlug = product?.slug;
+
+        //buyer
+        await tradeNotification(
+          context,
+          userId,
+          productTitle,
+          units,
+          price,
+          productSlug,
+          "Congratulations, you have successfully purchased this property"
+        );
+
+        //seller
+        await tradeNotification(
+          context,
+          decodedSellerId,
+          productTitle,
+          units,
+          price,
+          productSlug,
+          "Congratulations!, someone purchased property units against an offer you created"
+        );
+
+        //trustee
+        await tradeNotification(
+          context,
+          decodedManagerId,
+          productTitle,
+          units,
+          price,
+          productSlug,
+          "A trade was successfully completed against the property you are managing"
+        );
+
+        //admin/platform
+        await tradeNotification(
+          context,
+          adminId, //admin id
+          productTitle,
+          units,
+          price,
+          productSlug
+        );
 
         return result?.n > 0;
       }
@@ -901,6 +981,10 @@ export default {
       if (!authToken || !userId) return new Error("Unauthorized");
       let decodedProductId = decodeOpaqueId(productId).id;
 
+      const { _id: adminId } = await Accounts.findOne({
+        "adminUIShopIds.0": { $ne: null, $exists: true },
+      });
+
       const { product } = await Catalog.findOne({
         "product._id": decodedProductId,
       });
@@ -908,6 +992,9 @@ export default {
       if (product?.activeStatus === false || product?.isVisible === false) {
         return new Error("This property has been removed from the marketplace");
       }
+
+      const productTitle = product?.title;
+      const productSlug = product?.slug;
 
       //manager id for manager wallet adjustment
       const decodedManagerId = decodeOpaqueId(product?.manager).id;
@@ -999,11 +1086,7 @@ export default {
           updateWallet(collections, decodedManagerId, buyerFee),
 
           //platform wallet
-          updateWallet(
-            collections,
-            decodeOpaqueId(process.env.ADMIN_ID).id,
-            sellerFee
-          ),
+          updateWallet(collections, adminId, sellerFee),
           updateTradeUnits(collections, decodedTradeId, -units),
           closeTrade(collections, decodedTradeId),
 
@@ -1026,6 +1109,50 @@ export default {
           }),
 
           removeOwnership(collections, sellerId, productId),
+
+          //buyer
+          tradeNotification(
+            context,
+            decodedBuyerId,
+            productTitle,
+            units,
+            price,
+            productSlug,
+            "Congratulations, you have successfully purchased this property"
+          ),
+
+          //seller
+          tradeNotification(
+            context,
+            userId,
+            productTitle,
+            units,
+            price,
+            productSlug,
+            "Congratulations!, your have successfully sold your property."
+          ),
+
+          //trustee
+          tradeNotification(
+            context,
+            decodedManagerId,
+            productTitle,
+            units,
+            price,
+            productSlug,
+            "A trade was successfully completed against the property you are managing"
+          ),
+
+          //admin/platform
+          tradeNotification(
+            context,
+            adminId, //admin id
+            productTitle,
+            units,
+            price,
+            productSlug,
+            "A trade was successfully completed"
+          ),
         ]);
         return result?.n > 0;
       }
@@ -1680,6 +1807,116 @@ export default {
   //     return err;
   //   }
   // },
+
+  //redundant
+  // async addDividend(parent, { input }, context, info) {
+  //   try {
+  //     const { authToken, userId, collections } = context;
+
+  //     if (!userId || !authToken) return new Error("Unauthorized");
+
+  //     await context.validatePermissions(`reaction:legacy:accounts`, "create");
+
+  //     const { Ownership, Catalog, Accounts, Dividends } = collections;
+  //     const { dividendTo, productId, amount } = input;
+  //     const decodedProductId = decodeOpaqueId(productId).id;
+
+  //     let decodedOwnerIds = dividendTo.map((id) => {
+  //       return decodeOpaqueId(id).id;
+  //     });
+
+  //     const { product } = await Catalog.findOne({
+  //       "product._id": decodedProductId,
+  //     });
+
+  //     if (product?.isDisabled) {
+  //       return new Error("This property is disabled");
+  //     }
+
+  //     const decodedManagerId = decodeOpaqueId(product?.manager).id;
+
+  //     const totalPropertyValue = product.area.value;
+
+  //     const ownersList = await Ownership.find({
+  //       productId: decodedProductId,
+  //       ownerId: { $in: decodedOwnerIds },
+  //     }).toArray();
+
+  //     let userSumMap = {};
+  //     let totalPricing = ownersList?.map((owner) => {
+  //       return owner?.ownershipHistory?.map((ownershipHistory, key) => {
+  //         console.log("ownershipHistory", ownershipHistory);
+  //         if (ownershipHistory?.tradeType === "buy") {
+  //           const ownerKey = owner.ownerId; // ownerId as key for owner specific sum
+  //           if (!userSumMap.hasOwnProperty(ownerKey)) {
+  //             userSumMap[ownerKey] = 0; // null check
+  //           }
+  //           userSumMap[ownerKey] += ownershipHistory.price;
+  //           return ownershipHistory.price;
+  //         }
+  //       });
+  //     });
+
+  //     let flattenedArray = totalPricing.flat();
+
+  //     //finding the sum total of the amount paid by all owners.
+  //     let totalSum = flattenedArray.reduce(
+  //       (accumulator, currentValue) => accumulator + currentValue,
+  //       0
+  //     );
+  //     let dividendAmount = (totalSum * amount) / 100;
+  //     console.log("dividend amount is ", dividendAmount);
+
+  //     await checkTrusteeWallet(collections, decodedManagerId, dividendAmount);
+  //     console.log("user sum map is ", userSumMap);
+
+  //     for (const ownerId in userSumMap) {
+  //       if (userSumMap.hasOwnProperty(ownerId)) {
+  //         const sum = (userSumMap[ownerId] * amount) / 100;
+
+  //         await addDividendAmount(collections, ownerId, sum);
+  //         console.log("inside loop");
+  //         await Dividends.updateOne(
+  //           {
+  //             dividendTo: ownerId,
+  //             productId: decodedProductId,
+  //           },
+  //           { $inc: { amount: sum } },
+  //           { upsert: true }
+  //         );
+  //       }
+  //     }
+  //     const { result } = await Accounts.updateOne(
+  //       {
+  //         _id: decodedManagerId,
+  //       },
+  //       { $inc: { "wallets.amount": -dividendAmount } }
+  //     );
+
+  //     decodedOwnerIds?.map(async (item) => {
+  //       let account = await Accounts?.findOne({
+  //         _id: decodeOpaqueId(item).id,
+  //       });
+
+  //       const messageHeader = "Congratulations ";
+  //       const messageBody = `You have been awarded a Dividend of ${amount}%`;
+  //       await sendDividendNotification(
+  //         context,
+  //         account,
+  //         messageHeader,
+  //         messageBody
+  //       );
+  //     });
+
+  //     return result?.n > 0;
+  //   } catch (err) {
+  //     return err;
+  //   }
+  // },
+
+  // calculate ownership percentage for each owner against the total value of the property
+  // validate manager/trustee wallet for total dividend to be awarded
+  // award dividend
   async addDividend(parent, { input }, context, info) {
     try {
       const { authToken, userId, collections } = context;
@@ -1688,7 +1925,7 @@ export default {
 
       await context.validatePermissions(`reaction:legacy:accounts`, "create");
 
-      const { Ownership, Catalog, Accounts, Dividends } = collections;
+      const { Ownership, Catalog, Accounts } = collections;
       const { dividendTo, productId, amount } = input;
       const decodedProductId = decodeOpaqueId(productId).id;
 
@@ -1704,85 +1941,132 @@ export default {
         return new Error("This property is disabled");
       }
 
+      //find manager name
+
+      // property attributes
+      const propertyTitle = product?.title;
+      const slug = product?.slug;
+
       const decodedManagerId = decodeOpaqueId(product?.manager).id;
+
+      let managerName = "";
+      const { profile } = await Accounts.findOne({
+        _id: decodedManagerId,
+      });
+      managerName = `${profile?.firstName} ${profile?.lastName}`;
+
+      await checkTrusteeWallet(collections, decodedManagerId, amount);
+
+      const totalPropertyValue = product.area.value;
 
       const ownersList = await Ownership.find({
         productId: decodedProductId,
         ownerId: { $in: decodedOwnerIds },
-        ownershipHistory: { $exists: true },
       }).toArray();
 
-      let userSumMap = {};
-      let totalPricing = ownersList?.map((owner) => {
-        return owner?.ownershipHistory?.map((ownershipHistory, key) => {
-          console.log("ownershipHistory", ownershipHistory);
-          if (ownershipHistory?.tradeType === "buy") {
-            const ownerKey = owner.ownerId; // ownerId as key for owner specific sum
-            if (!userSumMap.hasOwnProperty(ownerKey)) {
-              userSumMap[ownerKey] = 0; // null check
-            }
-            userSumMap[ownerKey] += ownershipHistory.price;
-            return ownershipHistory.price;
-          }
-        });
+      //dividend amount to be payed, we will check the sum total for all owners and verify the manager/trustee's wallet
+      let dividendAmount = amount;
+
+      //we will calculate ownership percentage for each owner
+      const percentageOwnership = ownersList?.map((owner, key) => {
+        let value = owner?.amount / totalPropertyValue;
+        return { ownerId: owner.ownerId, ownershipPercentage: value * 100 };
       });
 
-      let flattenedArray = totalPricing.flat();
-
-      //finding the sum total of the amount paid by all owners.
-      let totalSum = flattenedArray.reduce(
-        (accumulator, currentValue) => accumulator + currentValue,
-        0
-      );
-      let dividendAmount = (totalSum * amount) / 100;
-      console.log("dividend amount is ", dividendAmount);
-
-      await checkTrusteeWallet(collections, decodedManagerId, dividendAmount);
-      console.log("user sum map is ", userSumMap);
-
-      for (const ownerId in userSumMap) {
-        if (userSumMap.hasOwnProperty(ownerId)) {
-          const sum = (userSumMap[ownerId] * amount) / 100;
-
-          await addDividendAmount(collections, ownerId, sum);
-          console.log("inside loop");
-          await Dividends.updateOne(
-            {
-              dividendTo: ownerId,
-              productId: decodedProductId,
-            },
-            { $inc: { amount: sum } },
-            { upsert: true }
-          );
-        }
-      }
-      const { result } = await Accounts.updateOne(
-        {
-          _id: decodedManagerId,
-        },
-        { $inc: { "wallets.amount": -dividendAmount } }
-      );
-
-      decodedOwnerIds?.map(async (item) => {
-        let account = await Accounts?.findOne({
-          _id: decodeOpaqueId(item).id,
-        });
-
+      percentageOwnership.map(async (item, key) => {
+        console.log(
+          `dividend awarded is ${item.ownerId}`,
+          (item.ownershipPercentage / 100) * amount
+        );
+        const value = (item.ownershipPercentage / 100) * amount;
+        const roundedValue = value.toFixed(2);
         const messageHeader = "Congratulations ";
-        const messageBody = `You have been awarded a Dividend of ${amount}%`;
+        const messageBody = `You have been awarded a Dividend of ${roundedValue}`;
+        const description = "Congratulations! You have been awarded a dividend";
+
+        await addDividendAmount(
+          collections,
+          item.ownerId,
+          value,
+          decodedProductId
+        );
         await sendDividendNotification(
           context,
-          account,
+          item?.ownerId,
+          managerName,
           messageHeader,
-          messageBody
+          messageBody,
+          propertyTitle,
+          roundedValue,
+          description,
+          slug
+        );
+        await Accounts.updateOne(
+          {
+            _id: decodedManagerId,
+          },
+          { $inc: { "wallets.amount": -dividendAmount } }
         );
       });
 
-      return result?.n > 0;
+      //manager payout email to manager/trustee
+      await sendDividendPayoutNotification(
+        context,
+        decodedManagerId,
+        "Dividend Payout Successful",
+        "Your Request for dividend payout has been completed",
+        propertyTitle,
+        amount,
+        "Your Request for dividend payout has been completed",
+        slug
+      );
+
+      return true;
     } catch (err) {
       return err;
     }
   },
+
+  async sendPropertyEventNotification(parent, args, context, info) {
+    try {
+      const { productId, eventTitle, eventDetails } = args;
+      const { collections } = context;
+      const { Ownership, Catalog } = collections;
+      const decodedProductId = decodeOpaqueId(productId).id;
+
+      //find the product from catalog to fetch catalog details for email
+      const { product } = await Catalog.findOne({
+        "product._id": decodedProductId,
+      });
+      const productSlug = product?.slug;
+      const propertyLink = `${process.env.CLIENT_URL}/product/${productSlug}`;
+
+      //we will find the users who have subscribed to the property from Ownership collection
+      const owners = await Ownership.find({
+        productId: decodedProductId,
+      }).toArray();
+
+      console.log("all owners are ", owners);
+
+      //we will map owners and send email and phone notifications to all the owners
+      if (owners.length !== 0) {
+        owners.map(async (owner, index) => {
+          await propertyEventNotification(
+            context,
+            owner.ownerId,
+            eventTitle,
+            eventDetails,
+            propertyLink
+          );
+        });
+      }
+
+      return true;
+    } catch (err) {
+      return err;
+    }
+  },
+
   async addUserDocuments(parent, { input }, context, info) {
     try {
       const { userId, authToken, collections } = context;

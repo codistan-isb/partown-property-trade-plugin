@@ -12,11 +12,11 @@ export default async function tradeNotification(
   accountId,
   propertyTitle,
   units,
-  fullName,
-  propertyImage,
-  slug
+  price,
+  slug,
+  description
 ) {
-  const propertyUrl = `https://dev.partown.co/en/product/${slug}`;
+  const propertyUrl = `${process.env.CLIENT_URL}/product/${slug}`;
   const { Accounts } = context.collections;
 
   const account = await Accounts.findOne({ _id: accountId });
@@ -24,11 +24,10 @@ export default async function tradeNotification(
   //account information
 
   let email = _.get(account, "emails[0].address");
+  let firstName = _.get(account, "profile.firstName");
+  let lastName = _.get(account, "profile.lastName");
 
-  console.log("email is***** ", email);
-
-  let profileImage = _.get(account, "profile.picture");
-
+  // validate whether the user has enabled notifications services for their account or not
   const hasEnabledEmailNotification = _.get(
     account,
     "userPreferences.contactPreferences.email"
@@ -38,26 +37,26 @@ export default async function tradeNotification(
     "userPreferences.contactPreferences.sms"
   );
 
-  console.log(
-    "enabled check",
-    hasEnabledEmailNotification,
-    hasEnabledSMSNotification
-  );
-
   if (hasEnabledEmailNotification) {
     await sendTradeEmail(
       context,
       propertyTitle,
       units,
-      email,
-      fullName,
-      profileImage,
-      propertyImage,
-      propertyUrl
+      price,
+      propertyUrl,
+      description,
+      firstName,
+      lastName,
+      email
     );
   }
   if (hasEnabledSMSNotification) {
     console.log("*******sending phone notification**********");
+    await context.mutations.sendPhoneNotification(
+      phoneNumber,
+      "Trade Altert",
+      `A trade has been completed. Click here to View property ${propertyUrl}`
+    );
   }
   return true;
 }
