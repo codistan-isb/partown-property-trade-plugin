@@ -17,9 +17,9 @@ const client = new Twilio(accountSid, authToken);
  * @param {Boolean} args.shouldIncludeArchived - Include archived units in results
  * @returns {Promise<Object[]>} Array of Unit Variant objects.
  */
-export default async function sendPhoneNotification(phoneNumber, body) {
+export default async function sendPhoneNotification(phoneNumber, title, body) {
   try {
-    console.log("send phone notification", phoneNumber, body);
+    console.log("send phone notification", { phoneNumber, title, body });
 
     const data = await client.messages.create({
       body: body,
