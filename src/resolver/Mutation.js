@@ -465,6 +465,7 @@ export default {
         Trades,
         Ownership,
         ProductRate,
+        users
       } = collections;
 
       if (!authToken || !userId) throw new Error("Unauthorized");
@@ -571,6 +572,7 @@ export default {
 
       if (!insertedId) throw new Error("Error creating Trade");
 
+      let user = ""
       if (buyerId) {
         // transfer total Trade value from user's wallet to escrow
         await Accounts.updateOne(
@@ -582,6 +584,10 @@ export default {
             },
           }
         );
+
+        user = await users.findOne({
+          _id: decodeOpaqueId(buyerId).id,
+        });
       } else if (sellerId) {
         await updateOwnership(
           collections,
@@ -599,6 +605,17 @@ export default {
               "wallets.escrow": sellerFee,
             },
           }
+        );
+        user = await users.findOne({
+          _id: decodeOpaqueId(sellerId).id
+        });
+      }
+
+      if(user && user?.phone) {
+        context.mutations.sendPhoneNotification(
+          user?.phone,
+          "Trade Property",
+          "Trade Message for Property"
         );
       }
 
